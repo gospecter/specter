@@ -1,0 +1,82 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$ref": "#/definitions/PostFrontmatterV2",
+  "definitions": {
+    "PostFrontmatterV2": {
+      "type": "object",
+      "properties": {
+        "cms": {
+          "type": "object",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "enum": [
+                "ghost",
+                "shopify"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "description": "Native ID from the CMS — opaque to the daemon."
+            },
+            "slug": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "published",
+                "scheduled"
+              ]
+            },
+            "updated_at": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "platform",
+            "id",
+            "slug",
+            "status",
+            "updated_at"
+          ],
+          "additionalProperties": false
+        },
+        "local_updated_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "feature_image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "excerpt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "cms",
+        "local_updated_at",
+        "tags",
+        "feature_image",
+        "excerpt"
+      ],
+      "additionalProperties": false,
+      "description": "V2 frontmatter — namespaced `cms` block. Written by v0.4.0+; readable by v0.3.2+. Top-level user fields (`tags`, `feature_image`, `excerpt`, `local_updated_at`) keep their current location."
+    }
+  }
+}

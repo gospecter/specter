@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';" />
+  <title>Welcome to Specter</title>
+  <link rel="stylesheet" href="../common.css" />
+  <link rel="stylesheet" href="platform-picker.css" />
+</head>
+<body class="ds">
+  <main class="picker">
+    <header class="picker-header">
+      <h1 class="ds-headline-lg">Welcome to Specter</h1>
+      <p class="ds-muted" style="font-size: var(--ds-fs-body-lg);">
+        Sync any CMS to a folder of markdown.
+      </p>
+    </header>
+
+    <section>
+      <h2 class="ds-headline-sm">Connect your first platform</h2>
+
+      <div class="tile-row" role="radiogroup" aria-label="Choose a platform">
+        <button class="tile" data-platform="ghost" role="radio" aria-checked="false">
+          <span class="tile-glyph">G</span>
+          <span class="tile-name">Ghost</span>
+          <span class="tile-hint ds-label-sm">Admin key paste</span>
+        </button>
+        <button class="tile" data-platform="shopify" role="radio" aria-checked="false">
+          <span class="tile-glyph glyph-shopify">S</span>
+          <span class="tile-name">Shopify</span>
+          <span class="tile-hint ds-label-sm">OAuth</span>
+        </button>
+        <button class="tile" data-platform="wordpress" role="radio" aria-checked="false">
+          <span class="tile-glyph glyph-wordpress">W</span>
+          <span class="tile-name">WordPress</span>
+          <span class="tile-hint ds-label-sm">One-click authorize</span>
+        </button>
+      </div>
+
+      <p class="ds-label-sm coming-soon">Coming soon · Drupal · Joomla</p>
+    </section>
+  </main>
+
+  <script type="module" src="platform-picker.js"></script>
+</body>
+</html>

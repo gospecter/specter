@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';" />
+  <title>Specter Settings</title>
+  <link rel="stylesheet" href="../common.css" />
+  <link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+  <div class="settings-container col">
+
+    <div class="px-lg pt-lg pb-md col col-gap-sm">
+      <h1>Settings</h1>
+      <p class="caption">Change your Ghost connection, local sync folder, and conflict behavior.</p>
+    </div>
+
+    <div class="settings-scroll">
+
+      <!-- ── Ghost ──────────────────────────────────────────────────────── -->
+      <div class="section-group">
+        <div class="section-title px-lg">Ghost</div>
+        <div class="section mx-lg">
+          <div class="col col-gap-sm">
+            <label for="s-ghost-url">Ghost URL</label>
+            <input id="s-ghost-url" type="url" placeholder="https://yourblog.ghost.io" />
+          </div>
+          <div class="col col-gap-sm" style="margin-top:12px;">
+            <label for="s-admin-key">Admin API Key</label>
+            <input id="s-admin-key" type="password" placeholder="id:secret" />
+          </div>
+          <div class="row row-gap-sm" style="margin-top:12px;">
+            <button class="btn" id="s-test-btn" disabled>
+              <span id="s-test-spinner" class="spinner hidden"></span>
+              Test Connection
+            </button>
+            <span id="s-test-result" class="inline-status"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Local Folder ───────────────────────────────────────────────── -->
+      <div class="section-group">
+        <div class="section-title px-lg">Local Folder</div>
+        <div class="section mx-lg">
+          <div class="row row-gap-sm">
+            <span id="s-folder-path" class="path-display empty">No folder chosen</span>
+            <button class="btn" id="s-pick-folder">Choose Folder…</button>
+          </div>
+          <div id="s-legacy-note" class="caption hidden" style="margin-top:6px;"></div>
+        </div>
+      </div>
+
+      <!-- ── License ────────────────────────────────────────────────────── -->
+      <div class="section-group">
+        <div class="section-title px-lg">License</div>
+        <div class="section mx-lg" id="s-license-section">
+          <div class="row">
+            <span class="spinner"></span>
+            <span class="caption" style="margin-left:8px;">Loading license…</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Sync ───────────────────────────────────────────────────────── -->
+      <div class="section-group">
+        <div class="section-title px-lg">Sync</div>
+        <div class="section mx-lg col col-gap-sm">
+
+          <div class="col col-gap-sm">
+            <label for="s-sync-mode">Sync mode</label>
+            <select id="s-sync-mode">
+              <option value="auto">Watch and sync automatically</option>
+              <option value="manual">Manual sync only</option>
+            </select>
+            <span id="s-sync-mode-help" class="caption"></span>
+          </div>
+
+          <div class="row row-gap-sm" style="margin-top:4px;">
+            <input type="checkbox" id="s-pull-drafts" />
+            <label for="s-pull-drafts" style="margin:0;text-transform:none;font-weight:400;font-size:13px;letter-spacing:0;">Pull drafts</label>
+          </div>
+
+          <div class="row row-gap-sm">
+            <input type="checkbox" id="s-pull-published" />
+            <label for="s-pull-published" style="margin:0;text-transform:none;font-weight:400;font-size:13px;letter-spacing:0;">Pull published posts</label>
+          </div>
+
+          <div class="col col-gap-sm" style="margin-top:4px;">
+            <label for="s-conflict-strategy">Conflict strategy</label>
+            <select id="s-conflict-strategy">
+              <option value="ask">Ask every time</option>
+              <option value="keep_local">Keep local changes</option>
+              <option value="keep_remote">Keep Ghost changes</option>
+            </select>
+            <span id="s-conflict-help" class="caption"></span>
+          </div>
+
+        </div>
+      </div>
+
+    </div><!-- /settings-scroll -->
+
+    <div id="s-save-error" class="inline-status status-error px-lg pb-md hidden"></div>
+
+    <div class="window-footer">
+      <button class="btn" id="s-cancel">Cancel</button>
+      <button class="btn btn-primary" id="s-save" disabled>Save</button>
+    </div>
+
+  </div>
+
+  <script type="module" src="settings.js"></script>
+</body>
+</html>

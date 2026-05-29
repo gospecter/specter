@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';" />
+  <title>Specter</title>
+  <link rel="stylesheet" href="../common.css" />
+  <link rel="stylesheet" href="dashboard.css" />
+</head>
+<body class="ds">
+  <div class="layout">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <header class="brand">
+        <span class="brand-glyph">◇</span>
+        <span class="brand-name">Specter</span>
+      </header>
+
+      <nav class="sidebar-nav" aria-label="Sections">
+        <button class="nav-row is-active" data-section="targets">
+          <span class="nav-bar"></span>
+          <span class="nav-icon">▦</span>
+          <span class="nav-label">Targets</span>
+        </button>
+        <button class="nav-row" data-section="activity">
+          <span class="nav-bar"></span>
+          <span class="nav-icon">≡</span>
+          <span class="nav-label">Activity</span>
+        </button>
+        <button class="nav-row" data-section="conflicts">
+          <span class="nav-bar"></span>
+          <span class="nav-icon">!</span>
+          <span class="nav-label">Conflicts</span>
+        </button>
+        <button class="nav-row" data-section="settings">
+          <span class="nav-bar"></span>
+          <span class="nav-icon">⚙</span>
+          <span class="nav-label">Settings</span>
+        </button>
+      </nav>
+
+      <footer class="sidebar-foot">
+        <span class="pill pill-success">● PRO</span>
+      </footer>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+
+      <!-- Targets pane -->
+      <section class="pane" data-pane="targets">
+        <header class="pane-header">
+          <h1 class="ds-headline-md">Targets</h1>
+          <div class="add-target">
+            <button id="btn-add-target" class="btn-primary" type="button">+ Add target</button>
+            <div id="add-target-menu" class="add-target-menu hidden" role="menu">
+              <button type="button" data-add="ghost" role="menuitem">Ghost…</button>
+              <button type="button" data-add="shopify" role="menuitem">Shopify…</button>
+              <button type="button" data-add="wordpress" role="menuitem">WordPress…</button>
+            </div>
+          </div>
+        </header>
+        <hr class="rule" />
+
+        <div class="card-list" id="card-list">
+          <!-- Cards rendered by dashboard.ts -->
+        </div>
+      </section>
+
+      <section class="pane hidden" data-pane="activity">
+        <h1 class="ds-headline-md">Activity</h1>
+        <p class="ds-muted">Per-target sync log lands here (spec S4).</p>
+      </section>
+
+      <section class="pane hidden" data-pane="conflicts">
+        <h1 class="ds-headline-md">Conflicts</h1>
+        <p class="ds-muted">Multi-platform conflict resolver lands here (spec S5).</p>
+      </section>
+
+      <section class="pane hidden" data-pane="settings">
+        <h1 class="ds-headline-md">Settings</h1>
+        <p class="ds-muted">Targets list + defaults panel lands here (spec S6).</p>
+      </section>
+
+    </main>
+  </div>
+
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>

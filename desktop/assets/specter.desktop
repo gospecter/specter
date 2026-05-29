@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Specter
+GenericName=Ghost CMS Sync
+Comment=Two-way sync between Ghost blog and local markdown files
+Exec=specter %U
+Icon=specter
+Terminal=false
+Type=Application
+Categories=Utility;Office;
+StartupNotify=true
+StartupWMClass=Specter
+Keywords=ghost;markdown;sync;blog;cms;

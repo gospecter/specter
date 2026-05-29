@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';" />
+  <title>Specter Setup</title>
+  <link rel="stylesheet" href="../common.css" />
+  <link rel="stylesheet" href="onboarding.css" />
+</head>
+<body>
+  <!-- Progress bar (4 segments matching OnboardingController.Step) -->
+  <div class="progress-bar" id="progress-bar">
+    <div class="progress-bar-segment" data-step="0"></div>
+    <div class="progress-bar-segment" data-step="1"></div>
+    <div class="progress-bar-segment" data-step="2"></div>
+    <div class="progress-bar-segment" data-step="3"></div>
+  </div>
+  <hr class="divider" />
+
+  <!-- Step panels -->
+  <div id="step-welcome" class="step-panel p-lg col col-gap-md">
+    <h1>Welcome to Specter</h1>
+    <p class="status-muted">
+      Two-way sync between your Ghost blog and a folder of markdown files.
+      We'll get you set up in three quick steps.
+    </p>
+    <div class="spacer"></div>
+    <div class="row">
+      <div class="spacer"></div>
+      <button class="btn btn-primary" id="btn-welcome-next">Get Started</button>
+    </div>
+  </div>
+
+  <div id="step-credentials" class="step-panel p-lg col col-gap-md hidden">
+    <h2>Connect to Ghost</h2>
+    <p class="caption">
+      Find your Admin API key under
+      <strong>Ghost Admin → Settings → Integrations → Add custom integration</strong>.
+    </p>
+
+    <div class="col col-gap-sm">
+      <label for="ghost-url">Ghost URL</label>
+      <input id="ghost-url" type="url" placeholder="https://yourblog.ghost.io" />
+    </div>
+
+    <div class="col col-gap-sm">
+      <label for="admin-key">Admin API Key</label>
+      <input id="admin-key" type="password" placeholder="id:secret" />
+    </div>
+
+    <div class="row row-gap-sm">
+      <button class="btn" id="btn-test-credentials" disabled>
+        <span id="test-spinner" class="spinner hidden"></span>
+        Test Connection
+      </button>
+      <span id="test-result" class="inline-status"></span>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="row row-gap-sm">
+      <button class="btn" id="btn-credentials-back">Back</button>
+      <div class="spacer"></div>
+      <button class="btn btn-primary" id="btn-credentials-next" disabled>Continue</button>
+    </div>
+  </div>
+
+  <div id="step-folder" class="step-panel p-lg col col-gap-md hidden">
+    <h2>Pick the sync folder</h2>
+    <p class="caption">
+      Choose the local folder where your Ghost posts should live.
+      Specter watches this folder for changes and keeps it in sync with your blog.
+    </p>
+
+    <div class="row row-gap-sm">
+      <span class="path-display empty" id="folder-path">No folder chosen</span>
+      <button class="btn" id="btn-pick-folder">Choose Folder…</button>
+    </div>
+
+    <p class="caption" id="folder-tip">
+      Tip: this can be any folder. If you use Obsidian, point it at a folder inside your vault.
+    </p>
+
+    <div class="spacer"></div>
+    <div class="row row-gap-sm">
+      <button class="btn" id="btn-folder-back">Back</button>
+      <div class="spacer"></div>
+      <button class="btn btn-primary" id="btn-folder-next" disabled>Continue</button>
+    </div>
+  </div>
+
+  <div id="step-done" class="step-panel p-lg col col-gap-md hidden">
+    <div class="row row-gap-sm">
+      <span class="status-ok" style="font-size:20px;">✓</span>
+      <h2 class="status-ok">Ready to sync</h2>
+    </div>
+    <p class="status-muted">
+      Specter will run quietly in your system tray.
+      The first full sync starts as soon as you finish setup.
+    </p>
+
+    <ul class="done-list">
+      <li>Auto-push when you edit files in the sync folder</li>
+      <li>Periodic pull every 10 minutes for remote changes</li>
+      <li>Conflict prompts when both sides change the same post</li>
+    </ul>
+
+    <div id="save-error" class="inline-status status-error hidden"></div>
+
+    <div class="spacer"></div>
+    <div class="row">
+      <div class="spacer"></div>
+      <button class="btn btn-primary" id="btn-finish">Finish</button>
+    </div>
+  </div>
+
+  <script type="module" src="onboarding.js"></script>
+</body>
+</html>

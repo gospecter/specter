@@ -1,0 +1,6 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Golden migration fixtures are byte-exact test data. Keep checkout line
+# endings stable on Windows so they match the serializer output.
+tests/migration/**/*.md text eol=lf

@@ -1,0 +1,217 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$ref": "#/definitions/DaemonConfig",
+  "definitions": {
+    "DaemonConfig": {
+      "type": "object",
+      "properties": {
+        "ghostUrl": {
+          "type": "string"
+        },
+        "adminApiKey": {
+          "type": "string"
+        },
+        "syncFolderPath": {
+          "type": "string"
+        },
+        "pullDrafts": {
+          "type": "boolean"
+        },
+        "pullPublished": {
+          "type": "boolean"
+        },
+        "conflictStrategy": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "keep_local",
+            "keep_remote"
+          ]
+        },
+        "syncMode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "manual"
+          ],
+          "description": "How the watcher reacts to local file edits.\n- 'auto'   (default): push changes within the debounce window; periodic full sync.\n- 'manual': watcher only runs periodic pulls; pushes are user-driven via Sync Now /   Push to Ghost. Lets cautious users avoid surprise writes to their blog."
+        },
+        "vaultPath": {
+          "type": "string",
+          "description": "Absolute path to the vault root."
+        },
+        "watchDebounceMs": {
+          "type": "number",
+          "description": "Debounce window (ms) for the file watcher before flushing changes."
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/TargetConfig"
+          },
+          "description": "Multi-target list. Always present after `loadConfig()` (synthesized from legacy fields if absent on disk). Always written to disk by `saveConfig`."
+        }
+      },
+      "required": [
+        "adminApiKey",
+        "conflictStrategy",
+        "ghostUrl",
+        "pullDrafts",
+        "pullPublished",
+        "syncFolderPath",
+        "syncMode",
+        "targets",
+        "vaultPath",
+        "watchDebounceMs"
+      ],
+      "additionalProperties": false
+    },
+    "TargetConfig": {
+      "type": "object",
+      "properties": {
+        "handle": {
+          "type": "string",
+          "description": "URL-safe handle — also the folder name when multiple targets are configured."
+        },
+        "label": {
+          "type": "string",
+          "description": "Display label, e.g. \"My Ghost Blog\"."
+        },
+        "syncFolderPath": {
+          "type": "string",
+          "description": "Subfolder under the target's effective root. Empty means the effective root itself is used. In single-target configs, this collapses to the legacy `syncFolderPath` behavior."
+        },
+        "pullDrafts": {
+          "type": "boolean"
+        },
+        "pullPublished": {
+          "type": "boolean"
+        },
+        "conflictStrategy": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "keep_local",
+            "keep_remote"
+          ]
+        },
+        "syncMode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "manual"
+          ]
+        },
+        "adapter": {
+          "$ref": "#/definitions/AdapterConfig",
+          "description": "CMS credentials. Discriminated by `platform`."
+        }
+      },
+      "required": [
+        "handle",
+        "label",
+        "syncFolderPath",
+        "pullDrafts",
+        "pullPublished",
+        "conflictStrategy",
+        "syncMode",
+        "adapter"
+      ],
+      "additionalProperties": false,
+      "description": "Per-target configuration: one CMS connection + the engine-visible sync settings that govern how its content lives in the vault.\n\nv0.4.0 Phase B introduces this as the canonical unit; legacy single-Ghost configs (every shipped user) auto-synthesize a single `targets[0]` on load via `synthesizeLegacyTarget`. The writer still emits the legacy flat fields alongside `targets[]` for one release window so a downgrade is non-fatal."
+    },
+    "AdapterConfig": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "const": "ghost"
+            },
+            "ghostUrl": {
+              "type": "string"
+            },
+            "adminApiKey": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "platform",
+            "ghostUrl",
+            "adminApiKey"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "const": "shopify"
+            },
+            "shop": {
+              "type": "string",
+              "description": "Full myshopify.com domain, e.g. \"my-store.myshopify.com\"."
+            },
+            "accessToken": {
+              "type": "string",
+              "description": "Admin API access token (shpat_… for dev-store, OAuth token in prod)."
+            },
+            "refreshToken": {
+              "type": "string",
+              "description": "OAuth refresh token for expiring offline tokens. Rotated after every refresh."
+            },
+            "accessTokenExpiresAt": {
+              "type": "string",
+              "description": "ISO timestamp when the access token expires."
+            },
+            "refreshTokenExpiresAt": {
+              "type": "string",
+              "description": "ISO timestamp when the refresh token expires."
+            },
+            "apiVersion": {
+              "type": "string",
+              "description": "GraphQL API version. Defaults to the adapter's pinned version."
+            }
+          },
+          "required": [
+            "platform",
+            "shop",
+            "accessToken"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "const": "wordpress"
+            },
+            "siteUrl": {
+              "type": "string",
+              "description": "Full URL of the WordPress site, e.g. \"https://myblog.com\"."
+            },
+            "username": {
+              "type": "string",
+              "description": "WordPress username."
+            },
+            "appPassword": {
+              "type": "string",
+              "description": "Application Password — 24-char string (spaces stripped internally)."
+            }
+          },
+          "required": [
+            "platform",
+            "siteUrl",
+            "username",
+            "appPassword"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "Per-platform credential block. Discriminated by `platform`. Other config (vault path, sync folder, conflict strategy, …) stays in the top-level DaemonConfig — these fields are purely the CMS connection."
+    }
+  }
+}

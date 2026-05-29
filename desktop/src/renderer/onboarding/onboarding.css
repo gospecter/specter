@@ -1,0 +1,40 @@
+/* Onboarding-specific styles */
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.step-panel {
+  flex: 1;
+  overflow: hidden;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.done-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.done-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.done-list li::before {
+  content: "→";
+  color: var(--accent);
+  flex-shrink: 0;
+}

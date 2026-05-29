@@ -1,0 +1,55 @@
+/* Settings-specific styles */
+
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.settings-container {
+  height: 100%;
+  overflow: hidden;
+}
+
+.settings-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 0 var(--space-md) 0;
+}
+
+.section-group {
+  margin-bottom: var(--space-md);
+}
+
+.section-group .section-title {
+  margin-bottom: 6px;
+  margin-top: var(--space-md);
+}
+
+.mx-lg {
+  margin-left: var(--space-lg);
+  margin-right: var(--space-lg);
+}
+
+.license-pro {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.license-free {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.license-key-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.license-key-row input {
+  flex: 1;
+}

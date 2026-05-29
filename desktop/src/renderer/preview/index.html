@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';" />
+  <title>Preview Sync</title>
+  <link rel="stylesheet" href="../common.css" />
+  <link rel="stylesheet" href="preview.css" />
+</head>
+<body>
+  <div class="preview-container col">
+
+    <!-- Header -->
+    <div class="preview-header row row-gap-md px-lg" style="padding-top:12px;padding-bottom:12px;">
+      <div class="col" style="gap:2px;">
+        <h2>Preview Sync</h2>
+        <span class="caption">What would change if you synced right now. Nothing is touched until you press Run Sync Now.</span>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn" id="p-refresh">Refresh</button>
+    </div>
+
+    <hr class="divider" />
+
+    <!-- Content area -->
+    <div class="preview-content" id="p-content">
+      <div class="preview-loading">
+        <span class="spinner"></span>
+        <span class="caption">Computing plan…</span>
+      </div>
+    </div>
+
+    <hr class="divider" />
+
+    <!-- Footer -->
+    <div class="window-footer">
+      <span id="p-summary" class="caption status-muted"></span>
+      <div class="spacer"></div>
+      <button class="btn" id="p-close">Close</button>
+      <button class="btn btn-primary" id="p-run" disabled>Run Sync Now</button>
+    </div>
+
+  </div>
+  <script type="module" src="preview.js"></script>
+</body>
+</html>

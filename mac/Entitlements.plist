@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Entitlements for the Specter app under Apple's Hardened Runtime.
+
+    The bundled `Contents/Resources/node` binary is Node 22, which uses V8's
+    JIT compiler. Hardened runtime denies executable-memory-allocation by
+    default; allow-jit + allow-unsigned-executable-memory let V8 work.
+
+    network.client is required because the bundled daemon calls fetch() to
+    api.ghost.io. Without it, hardened runtime kills the connection.
+
+    disable-library-validation is intentionally LEFT OUT — we re-sign the
+    bundled node with our Developer ID, so library validation passes.
+  -->
+
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+
+  <key>com.apple.security.network.client</key>
+  <true/>
+
+  <!--
+    Required by the Process() spawns in DaemonSupervisor + MenuActions.
+    Without it, hardened runtime blocks the parent app from launching the
+    bundled `node` binary as a child.
+  -->
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+</dict>
+</plist>

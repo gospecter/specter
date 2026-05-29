@@ -1,0 +1,99 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$ref": "#/definitions/AdapterConfig",
+  "definitions": {
+    "AdapterConfig": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "const": "ghost"
+            },
+            "ghostUrl": {
+              "type": "string"
+            },
+            "adminApiKey": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "platform",
+            "ghostUrl",
+            "adminApiKey"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "const": "shopify"
+            },
+            "shop": {
+              "type": "string",
+              "description": "Full myshopify.com domain, e.g. \"my-store.myshopify.com\"."
+            },
+            "accessToken": {
+              "type": "string",
+              "description": "Admin API access token (shpat_… for dev-store, OAuth token in prod)."
+            },
+            "refreshToken": {
+              "type": "string",
+              "description": "OAuth refresh token for expiring offline tokens. Rotated after every refresh."
+            },
+            "accessTokenExpiresAt": {
+              "type": "string",
+              "description": "ISO timestamp when the access token expires."
+            },
+            "refreshTokenExpiresAt": {
+              "type": "string",
+              "description": "ISO timestamp when the refresh token expires."
+            },
+            "apiVersion": {
+              "type": "string",
+              "description": "GraphQL API version. Defaults to the adapter's pinned version."
+            }
+          },
+          "required": [
+            "platform",
+            "shop",
+            "accessToken"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "const": "wordpress"
+            },
+            "siteUrl": {
+              "type": "string",
+              "description": "Full URL of the WordPress site, e.g. \"https://myblog.com\"."
+            },
+            "username": {
+              "type": "string",
+              "description": "WordPress username."
+            },
+            "appPassword": {
+              "type": "string",
+              "description": "Application Password — 24-char string (spaces stripped internally)."
+            }
+          },
+          "required": [
+            "platform",
+            "siteUrl",
+            "username",
+            "appPassword"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "Per-platform credential block. Discriminated by `platform`. Other config (vault path, sync folder, conflict strategy, …) stays in the top-level DaemonConfig — these fields are purely the CMS connection."
+    }
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "name": "ghost-sync",
+  "version": "0.6.2",
+  "description": "Cross-platform daemon for two-way sync between Ghost CMS and a local markdown folder",
+  "type": "module",
+  "bin": {
+    "ghost-sync": "./bin/ghost-sync.mjs"
+  },
+  "main": "dist/cli.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node esbuild.config.mjs",
+    "dev": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node bin/ghost-sync.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "export:public": "node scripts/export-public-repo.mjs",
+    "schema:gen": "node scripts/gen-schemas.mjs",
+    "schema:check": "node scripts/gen-schemas.mjs && git diff --exit-code schemas/",
+    "wp:up": "bash scripts/wp-dev/bootstrap.sh",
+    "wp:down": "docker compose -f scripts/wp-dev/docker-compose.yml down -v",
+    "wp:reset": "npm run wp:down && npm run wp:up",
+    "wp:logs": "docker compose -f scripts/wp-dev/docker-compose.yml logs -f wordpress"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "commander": "^12.1.0",
+    "gray-matter": "^4.0.3",
+    "markdown-it": "^14.2.0",
+    "node-notifier": "^10.0.1",
+    "sanitize-html": "^2.17.4",
+    "turndown": "^7.2.0"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^20.14.10",
+    "@types/node-notifier": "^8.0.5",
+    "@types/sanitize-html": "^2.16.1",
+    "@types/turndown": "^5.0.4",
+    "esbuild": "^0.23.0",
+    "quicktype-core": "^23.2.6",
+    "ts-json-schema-generator": "^2.9.0",
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.6"
+  },
+  "license": "AGPL-3.0-only",
+  "author": "Axel"
+}

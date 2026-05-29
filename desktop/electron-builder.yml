@@ -1,0 +1,81 @@
+appId: com.spectersync.specter
+productName: Specter
+copyright: Copyright 2026 SpecterSync contributors
+
+protocols:
+  - name: Specter OAuth
+    schemes:
+      - specter
+
+directories:
+  output: dist-installer
+  buildResources: assets
+
+files:
+  - "build/**/*"
+  - "package.json"
+
+# Copy the compiled daemon bundle from the repo root into the packaged app's
+# Resources folder so supervisor.ts can find it at process.resourcesPath.
+extraResources:
+  - from: "../dist/daemon.bundle.js"
+    to: "daemon.bundle.js"
+
+asar: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+    - target: portable
+      arch:
+        - x64
+  icon: assets/installer-icon.ico
+  artifactName: "Specter-${version}-${arch}.${ext}"
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: assets/installer-icon.ico
+  uninstallerIcon: assets/installer-icon.ico
+  installerHeaderIcon: assets/installer-icon.ico
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Utility
+  icon: assets/app-icon.png
+  artifactName: "Specter-${version}-${arch}.${ext}"
+  synopsis: Two-way Ghost CMS sync
+  description: |
+    Specter syncs your Ghost blog to a folder of plain markdown files
+    and back. Edit posts locally with any tool — including AI — and
+    push them back to Ghost.
+  maintainer: SpecterSync contributors <hello@spectersync.com>
+  vendor: SpecterSync contributors
+  desktop:
+    entry:
+      StartupNotify: "true"
+      StartupWMClass: Specter
+      Comment: Two-way Ghost CMS sync
+      Keywords: ghost;markdown;sync;blog;cms;
+
+deb:
+  priority: optional
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+
+appImage:
+  license: ../LICENSE.md

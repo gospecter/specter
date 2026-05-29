@@ -1,0 +1,76 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$ref": "#/definitions/PostFrontmatterV1",
+  "definitions": {
+    "PostFrontmatterV1": {
+      "$ref": "#/definitions/PostFrontmatter",
+      "description": "Legacy v1 frontmatter — flat `ghost_*` keys. Currently the only shape on disk."
+    },
+    "PostFrontmatter": {
+      "type": "object",
+      "properties": {
+        "ghost_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ghost_slug": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ghost_status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "published",
+            "scheduled"
+          ]
+        },
+        "ghost_updated_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "local_updated_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "feature_image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "excerpt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ghost_id",
+        "ghost_slug",
+        "ghost_status",
+        "ghost_updated_at",
+        "local_updated_at",
+        "tags",
+        "feature_image",
+        "excerpt"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

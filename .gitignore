@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+.env
+.claude/
+scripts/wp-dev/.env.wp-dev
+mac/.build/
+mac/Package.resolved
+mac/vendor/node
+
+# Electron desktop build outputs
+desktop/build/
+desktop/dist-installer/
+desktop/node_modules/

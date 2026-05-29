@@ -1,0 +1,108 @@
+/*
+ * platform-picker.css
+ * Spec: tasks/spec-multi-cms-ui.md — S1 First-run platform picker.
+ * Tokens: --ds-* from common.css.
+ */
+
+body.ds {
+  height: 100%;
+  margin: 0;
+}
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-section-gap);
+  padding: 48px;
+  background: var(--ds-bg-base);
+  min-height: 100vh;
+}
+
+.picker-header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.picker section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-gutter);
+}
+
+.tile-row {
+  display: flex;
+  gap: var(--ds-gutter);
+  flex-wrap: wrap;
+}
+
+.tile {
+  all: unset;
+  cursor: pointer;
+  width: 200px;
+  height: 180px;
+  padding: var(--ds-gutter);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+
+  background: var(--ds-bg-elevated);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-lg);
+
+  color: var(--ds-text-primary);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.tile:hover {
+  border-color: color-mix(in srgb, var(--ds-accent) 40%, var(--ds-border-subtle));
+}
+
+.tile:focus-visible {
+  outline: 2px solid var(--ds-accent);
+  outline-offset: 2px;
+}
+
+.tile:active {
+  background: var(--ds-bg-pressed);
+}
+
+.tile[disabled],
+.tile.locked {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.tile-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--ds-bg-input);
+  border-radius: var(--ds-radius);
+  font-family: var(--ds-font-sans);
+  font-size: 18px;
+  font-weight: var(--ds-fw-headline);
+  color: var(--ds-text-primary);
+}
+
+.tile-glyph.glyph-shopify   { color: var(--ds-success); }
+.tile-glyph.glyph-wordpress { color: var(--ds-accent-on-dark); }
+
+.tile-name {
+  margin-top: auto;
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-headline-sm);
+  line-height: var(--ds-lh-headline-sm);
+  font-weight: var(--ds-fw-headline-sm);
+}
+
+.tile-hint {
+  /* ds-label-sm class handles font + color */
+}
+
+.coming-soon {
+  margin-top: var(--ds-gutter);
+}

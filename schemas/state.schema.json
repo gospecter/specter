@@ -1,0 +1,431 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$ref": "#/definitions/DaemonState",
+  "definitions": {
+    "DaemonState": {
+      "type": "object",
+      "properties": {
+        "lastSyncAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastSyncStatus": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "error",
+            "conflict",
+            "never"
+          ]
+        },
+        "lastSyncMessage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lastPulled": {
+          "type": "number"
+        },
+        "lastPushed": {
+          "type": "number"
+        },
+        "lastConflicts": {
+          "type": "number"
+        },
+        "lastErrors": {
+          "type": "number"
+        },
+        "binaryPath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Absolute path to the ghost-sync CLI; written so GUI apps can find it without relying on the shell PATH. Updated on every CLI invocation."
+        },
+        "nodePath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Absolute path to the node binary that ran the CLI."
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/QueuedConflict"
+          }
+        },
+        "targets": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/TargetSyncState"
+          },
+          "description": "Per-target last-sync metrics, keyed by `TargetConfig.handle`. Optional so pre-v0.5.1 state.json files still deserialize. Populated by the engine on every per-target pull/push — not synthesized from global counters, so the Dashboard's per-card \"Last sync\" / \"Push count\" / etc. read straight from here without recomputing."
+        }
+      },
+      "required": [
+        "lastSyncAt",
+        "lastSyncStatus",
+        "lastSyncMessage",
+        "lastPulled",
+        "lastPushed",
+        "lastConflicts",
+        "lastErrors",
+        "binaryPath",
+        "nodePath",
+        "conflicts"
+      ],
+      "additionalProperties": false
+    },
+    "QueuedConflict": {
+      "type": "object",
+      "properties": {
+        "localPost": {
+          "$ref": "#/definitions/LocalPost"
+        },
+        "ghostPost": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RemotePost"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Remote-side state of the conflict. Field name kept as `ghostPost` for back-compat with the Mac app's QueuedConflict JSON deserializer (PreviewSync.swift reads `ghostPost.title`). The VALUE is now a platform-agnostic RemotePost — Mac reads `.title` which both shapes carry. v0.5+ renames to `remotePost` once Mac is updated in lockstep."
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "both_modified",
+            "deleted_remotely",
+            "deleted_locally"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "targetHandle": {
+          "type": "string",
+          "description": "Handle of the `TargetConfig` this conflict belongs to. Optional so old state.json entries (pre-v0.4.0) still deserialize; resolve.ts falls back to `targets[0]` when missing."
+        }
+      },
+      "required": [
+        "createdAt",
+        "ghostPost",
+        "id",
+        "localPost",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "LocalPost": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "$ref": "#/definitions/VaultFile"
+        },
+        "frontmatter": {
+          "$ref": "#/definitions/PostFrontmatter"
+        },
+        "title": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "rawContent": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "frontmatter",
+        "title",
+        "content",
+        "rawContent"
+      ],
+      "additionalProperties": false
+    },
+    "VaultFile": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path relative to vault root, forward-slash separated."
+        },
+        "basename": {
+          "type": "string",
+          "description": "Basename without extension."
+        },
+        "mtime": {
+          "type": "number",
+          "description": "Last-modified time in epoch ms."
+        }
+      },
+      "required": [
+        "path",
+        "basename",
+        "mtime"
+      ],
+      "additionalProperties": false,
+      "description": "Vault file handle — replaces Obsidian's TFile. Path is relative to the configured sync folder root."
+    },
+    "PostFrontmatter": {
+      "type": "object",
+      "properties": {
+        "ghost_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ghost_slug": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ghost_status": {
+          "type": "string",
+          "enum": [
+            "draft",
+            "published",
+            "scheduled"
+          ]
+        },
+        "ghost_updated_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "local_updated_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "feature_image": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "excerpt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ghost_id",
+        "ghost_slug",
+        "ghost_status",
+        "ghost_updated_at",
+        "local_updated_at",
+        "tags",
+        "feature_image",
+        "excerpt"
+      ],
+      "additionalProperties": false
+    },
+    "RemotePost": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Native ID — opaque to the engine."
+        },
+        "slug": {
+          "type": "string",
+          "description": "URL-safe slug (Shopify calls it `handle`)."
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string",
+          "description": "Body as markdown. Adapters convert from the platform-native format."
+        },
+        "status": {
+          "$ref": "#/definitions/PostStatus"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Short summary / excerpt."
+        },
+        "featureImage": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "URL of the feature/header image, or null."
+        },
+        "author": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Author name as a string — adapters flatten complex author models."
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO 8601. Used for optimistic-lock checks where the platform supports it."
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "publishedAt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "container": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RemoteContainer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Multi-container platforms (Shopify) set this; flat platforms (Ghost) leave null."
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Public URL, or null if not published."
+        }
+      },
+      "required": [
+        "id",
+        "slug",
+        "title",
+        "body",
+        "status",
+        "tags",
+        "summary",
+        "featureImage",
+        "author",
+        "updatedAt",
+        "createdAt",
+        "publishedAt",
+        "container",
+        "url"
+      ],
+      "additionalProperties": false
+    },
+    "PostStatus": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "published",
+        "scheduled"
+      ]
+    },
+    "RemoteContainer": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Native identifier (Shopify gid; Ghost: not applicable)."
+        },
+        "handle": {
+          "type": "string",
+          "description": "URL-safe identifier — drives folder name."
+        },
+        "title": {
+          "type": "string",
+          "description": "Human-readable label."
+        }
+      },
+      "required": [
+        "id",
+        "handle",
+        "title"
+      ],
+      "additionalProperties": false,
+      "description": "Optional \"container\" the post lives in. Shopify articles belong to a `Blog`; Ghost posts live in a single flat namespace and report `null`. Drives folder layout: `<container.handle>/<slug>.md` when present, `<slug>.md` when null."
+    },
+    "TargetSyncState": {
+      "type": "object",
+      "properties": {
+        "lastSyncAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "ISO timestamp of the last sync that touched this target."
+        },
+        "lastSyncStatus": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "ok",
+            "error",
+            "partial",
+            null
+          ],
+          "description": "Outcome of the last sync for this target. `partial` indicates a mix (e.g. pulled OK but push had a conflict)."
+        },
+        "lastPullCount": {
+          "type": "number",
+          "description": "Number of posts pulled in the last sync."
+        },
+        "lastPushCount": {
+          "type": "number",
+          "description": "Number of posts pushed in the last sync."
+        },
+        "lastConflicts": {
+          "type": "number",
+          "description": "Number of conflicts produced by the last sync."
+        },
+        "lastError": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "First error message from the last sync, if any. Full list lives in the global `lastSyncMessage`."
+        }
+      },
+      "required": [
+        "lastSyncAt",
+        "lastSyncStatus",
+        "lastPullCount",
+        "lastPushCount",
+        "lastConflicts",
+        "lastError"
+      ],
+      "additionalProperties": false,
+      "description": "Per-target metrics written after each per-target sync operation."
+    }
+  }
+}

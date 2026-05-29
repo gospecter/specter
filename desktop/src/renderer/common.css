@@ -1,0 +1,485 @@
+/*
+ * common.css — Specter renderer shared styles
+ *
+ * Visual language: clean, minimal, system font, tight spacing.
+ * Mirrors Specter's macOS aesthetic as closely as possible with plain CSS.
+ * Supports light/dark via prefers-color-scheme.
+ *
+ * Brand references: specterbg.png, specterbluebg.png, specterlogo.png (repo root).
+ * TODO: import/reference brand assets when icons are finalised.
+ */
+
+/* ── Reset ──────────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Tokens ─────────────────────────────────────────────────────────────── */
+:root {
+  --font: -apple-system, "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "Consolas", "SF Mono", monospace;
+
+  --radius: 6px;
+  --radius-sm: 4px;
+
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+
+  /* Colours (light) */
+  --bg: #ffffff;
+  --bg-secondary: #f5f5f7;
+  --bg-input: #ffffff;
+  --border: #d1d1d6;
+  --text: #1c1c1e;
+  --text-secondary: #6e6e73;
+  --text-tertiary: #aeaeb2;
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --red: #ff3b30;
+  --green: #34c759;
+  --orange: #ff9500;
+  --purple: #af52de;
+  --blue: #0a84ff;
+
+  --shadow: 0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.08);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1e;
+    --bg-secondary: #2c2c2e;
+    --bg-input: #3a3a3c;
+    --border: #3a3a3c;
+    --text: #f5f5f7;
+    --text-secondary: #aeaeb2;
+    --text-tertiary: #636366;
+    --accent: #0a84ff;
+    --accent-hover: #409cff;
+    --red: #ff453a;
+    --green: #30d158;
+    --orange: #ff9f0a;
+    --purple: #bf5af2;
+    --blue: #0a84ff;
+  }
+}
+
+/* ── Base ───────────────────────────────────────────────────────────────── */
+html, body {
+  height: 100%;
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Typography ─────────────────────────────────────────────────────────── */
+h1 { font-size: 22px; font-weight: 700; letter-spacing: -.3px; }
+h2 { font-size: 17px; font-weight: 600; }
+h3 { font-size: 15px; font-weight: 600; }
+
+.caption {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.caption2 {
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+/* ── Layout helpers ──────────────────────────────────────────────────────── */
+.row        { display: flex; align-items: center; }
+.row-gap-sm { gap: var(--space-sm); }
+.row-gap-md { gap: var(--space-md); }
+.col        { display: flex; flex-direction: column; }
+.col-gap-sm { gap: var(--space-sm); }
+.col-gap-md { gap: var(--space-md); }
+.spacer     { flex: 1; }
+
+.p-md  { padding: var(--space-md); }
+.p-lg  { padding: var(--space-lg); }
+.px-lg { padding-left: var(--space-lg); padding-right: var(--space-lg); }
+.pt-lg { padding-top: var(--space-lg); }
+.pb-md { padding-bottom: var(--space-md); }
+
+/* ── Form elements ───────────────────────────────────────────────────────── */
+label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: var(--space-xs);
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: .3px;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="url"] {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color .15s;
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus,
+input[type="url"]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+select {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+
+select:focus {
+  border-color: var(--accent);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, border-color .15s;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--border);
+}
+
+.btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 500;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn-danger {
+  color: var(--red);
+  border-color: color-mix(in srgb, var(--red) 30%, transparent);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
+
+.btn-link {
+  border: none;
+  background: none;
+  color: var(--accent);
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* ── Section card ─────────────────────────────────────────────────────────── */
+.section {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-md);
+  background: var(--bg-secondary);
+}
+
+.section + .section {
+  margin-top: var(--space-md);
+}
+
+.section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-sm);
+}
+
+/* ── Status messages ─────────────────────────────────────────────────────── */
+.status-ok     { color: var(--green); }
+.status-error  { color: var(--red); }
+.status-warn   { color: var(--orange); }
+.status-info   { color: var(--blue); }
+.status-muted  { color: var(--text-secondary); }
+
+.inline-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-size: 12px;
+}
+
+/* ── Badge pills ─────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 100px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.badge-free   { background: color-mix(in srgb, var(--purple) 18%, transparent); color: var(--purple); }
+.badge-pro    { background: color-mix(in srgb, var(--green) 18%, transparent); color: var(--green); }
+.badge-manual { background: color-mix(in srgb, var(--orange) 18%, transparent); color: var(--orange); }
+
+/* ── Progress bar ────────────────────────────────────────────────────────── */
+.progress-bar {
+  display: flex;
+  gap: 4px;
+  height: 4px;
+  margin-bottom: var(--space-md);
+  padding: 0 var(--space-lg);
+}
+
+.progress-bar-segment {
+  flex: 1;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background .2s;
+}
+
+.progress-bar-segment.active {
+  background: var(--accent);
+}
+
+/* ── Divider ─────────────────────────────────────────────────────────────── */
+hr, .divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+
+/* ── Path display ────────────────────────────────────────────────────────── */
+.path-display {
+  flex: 1;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--text-secondary) 10%, transparent);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.path-display.empty {
+  color: var(--text-secondary);
+}
+
+/* ── Spinner ─────────────────────────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  flex-shrink: 0;
+}
+
+/* ── Window footer ───────────────────────────────────────────────────────── */
+.window-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg);
+  border-top: 1px solid var(--border);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * Specter Design System — Stitch tokens
+ * Reference: tasks/spec-multi-cms-ui.md
+ * Stitch:    projects/14005065681931464655
+ *
+ * --ds-* tokens are the new multi-platform design language (dark-first,
+ * IDE-inspired). New surfaces (Dashboard, multi-platform onboarding, conflict
+ * resolver) opt in via these. Legacy --bg/--text/--accent tokens above are
+ * unchanged so existing onboarding/settings/preview/license screens keep
+ * rendering as today.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Surfaces (tonal layering, no shadows) */
+  --ds-bg-base:        #111416;
+  --ds-bg-panel:       #1d2022;
+  --ds-bg-elevated:    #232629;
+  --ds-bg-input:       #0c0f10;
+  --ds-bg-hover:       rgba(255, 255, 255, 0.04);
+  --ds-bg-pressed:     rgba(255, 255, 255, 0.08);
+  --ds-border-subtle: #34393E;
+  --ds-border-strong: #484553;
+
+  /* Text */
+  --ds-text-primary:  #e1e2e5;
+  --ds-text-muted:    #cac4d5;
+  --ds-text-outline:  #938e9e;
+  --ds-text-on-primary: #efe8ff;
+
+  /* Accent */
+  --ds-accent:           #6E56CF;
+  --ds-accent-on-dark:   #cbbeff;
+  --ds-accent-fixed:     #4a2ea9;
+  --ds-accent-soft:      rgba(110, 86, 207, 0.16);
+  --ds-tertiary:         #ffb964;
+
+  /* Status */
+  --ds-success:  #30A46C;
+  --ds-warning:  #FFB224;
+  --ds-error:    #E54D2E;
+
+  /* Typography */
+  --ds-font-sans: "Hanken Grotesk", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --ds-font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", "Consolas", monospace;
+
+  --ds-fs-headline-lg: 32px;
+  --ds-fs-headline-md: 24px;
+  --ds-fs-headline-sm: 18px;
+  --ds-fs-body-lg:     16px;
+  --ds-fs-body-md:     14px;
+  --ds-fs-body-sm:     12px;
+  --ds-fs-label-md:    13px;
+  --ds-fs-label-sm:    11px;
+
+  --ds-fw-headline:    600;
+  --ds-fw-headline-sm: 500;
+  --ds-fw-body:        400;
+  --ds-fw-label:       500;
+
+  --ds-lh-headline-lg: 40px;
+  --ds-lh-headline-md: 32px;
+  --ds-lh-headline-sm: 24px;
+  --ds-lh-body-lg:     24px;
+  --ds-lh-body-md:     20px;
+  --ds-lh-body-sm:     18px;
+  --ds-lh-label-md:    16px;
+  --ds-lh-label-sm:    14px;
+
+  --ds-ls-headline-lg: -0.02em;
+  --ds-ls-headline-md: -0.01em;
+  --ds-ls-label-md:     0.02em;
+  --ds-ls-label-sm:     0.03em;
+
+  /* Geometry */
+  --ds-unit:           4px;
+  --ds-gutter:        16px;
+  --ds-section-gap:   24px;
+  --ds-sidebar-w:    280px;
+  --ds-container-max: 1200px;
+
+  --ds-radius-sm:    4px;
+  --ds-radius:       8px;   /* buttons, inputs */
+  --ds-radius-md:   12px;
+  --ds-radius-lg:   16px;   /* cards, modals */
+  --ds-radius-pill: 9999px;
+}
+
+/* Scope: opt-in dark theme for surfaces that adopt the design system.
+ * Add `class="ds"` to <body> on Dashboard / new screens. */
+.ds {
+  background: var(--ds-bg-base);
+  color: var(--ds-text-primary);
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-body-md);
+  line-height: var(--ds-lh-body-md);
+  font-weight: var(--ds-fw-body);
+}
+
+.ds .ds-mono {
+  font-family: var(--ds-font-mono);
+  font-weight: var(--ds-fw-label);
+  letter-spacing: var(--ds-ls-label-md);
+}
+
+.ds .ds-headline-lg {
+  font-size: var(--ds-fs-headline-lg);
+  line-height: var(--ds-lh-headline-lg);
+  font-weight: var(--ds-fw-headline);
+  letter-spacing: var(--ds-ls-headline-lg);
+}
+
+.ds .ds-headline-md {
+  font-size: var(--ds-fs-headline-md);
+  line-height: var(--ds-lh-headline-md);
+  font-weight: var(--ds-fw-headline);
+  letter-spacing: var(--ds-ls-headline-md);
+}
+
+.ds .ds-headline-sm {
+  font-size: var(--ds-fs-headline-sm);
+  line-height: var(--ds-lh-headline-sm);
+  font-weight: var(--ds-fw-headline-sm);
+}
+
+.ds .ds-label-md {
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-md);
+  line-height: var(--ds-lh-label-md);
+  font-weight: var(--ds-fw-label);
+  letter-spacing: var(--ds-ls-label-md);
+}
+
+.ds .ds-label-sm {
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-sm);
+  line-height: var(--ds-lh-label-sm);
+  font-weight: var(--ds-fw-label);
+  letter-spacing: var(--ds-ls-label-sm);
+  color: var(--ds-text-outline);
+}
+
+.ds .ds-muted   { color: var(--ds-text-muted); }
+.ds .ds-outline { color: var(--ds-text-outline); }
+

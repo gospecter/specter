@@ -1,0 +1,32 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      # Use `npm install` not `npm ci` — package-lock.json is generated on a
+      # single OS and doesn't include platform-specific optional deps
+      # (e.g. @emnapi/* for Linux), which makes `npm ci` strict-fail on the
+      # platforms whose binaries weren't fetched at lock-generation time.
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      # Drift check — fail when TS schema source and committed schemas/
+      # artifacts disagree. Run only once (Linux + Node 22); regenerating on
+      # every matrix cell wastes time and risks line-ending churn on Windows.
+      - name: Schema codegen drift check
+        if: matrix.os == 'ubuntu-latest' && matrix.node == 22
+        run: npm run schema:check

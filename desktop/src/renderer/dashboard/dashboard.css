@@ -1,0 +1,362 @@
+/*
+ * dashboard.css
+ * Spec: tasks/spec-multi-cms-ui.md — S3 Dashboard.
+ * Tokens: --ds-* from common.css.
+ */
+
+body.ds { margin: 0; height: 100%; }
+
+.layout {
+  display: grid;
+  grid-template-columns: var(--ds-sidebar-w) 1fr;
+  min-height: 100vh;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  background: var(--ds-bg-panel);
+  border-right: 1px solid var(--ds-border-subtle);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 20px 24px;
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-headline-sm);
+  font-weight: var(--ds-fw-headline-sm);
+  color: var(--ds-text-primary);
+}
+
+.brand-glyph {
+  color: var(--ds-accent-on-dark);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 12px;
+}
+
+.nav-row {
+  all: unset;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: 2px 16px 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px 8px 0;
+  border-radius: var(--ds-radius);
+  color: var(--ds-text-muted);
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-body-md);
+  line-height: 1;
+}
+
+.nav-bar {
+  height: 16px;
+  background: transparent;
+  border-radius: 1px;
+}
+
+.nav-icon {
+  font-family: var(--ds-font-mono);
+  font-size: 13px;
+  color: var(--ds-text-muted);
+  text-align: center;
+}
+
+.nav-row:hover {
+  background: var(--ds-bg-hover);
+}
+
+.nav-row.is-active {
+  background: var(--ds-accent-soft);
+  color: var(--ds-text-primary);
+}
+
+.nav-row.is-active .nav-bar { background: var(--ds-accent); }
+.nav-row.is-active .nav-icon { color: var(--ds-accent-on-dark); }
+
+.sidebar-foot {
+  margin-top: auto;
+  padding: 20px;
+}
+
+/* ── Pills ───────────────────────────────────────────────────────────────── */
+
+.pill {
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-sm);
+  font-weight: var(--ds-fw-label);
+  letter-spacing: var(--ds-ls-label-sm);
+  padding: 3px 8px;
+  border-radius: var(--ds-radius-pill);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pill-success { background: var(--ds-success); color: #06231A; }
+.pill-warning { background: color-mix(in srgb, var(--ds-warning) 18%, transparent); color: var(--ds-warning); }
+.pill-error   { background: color-mix(in srgb, var(--ds-error)   18%, transparent); color: var(--ds-error); }
+.pill-accent  { background: var(--ds-accent-soft); color: var(--ds-accent-on-dark); }
+.pill-neutral { background: var(--ds-bg-elevated); color: var(--ds-text-muted); border: 1px solid var(--ds-border-subtle); }
+
+/* ── Main ────────────────────────────────────────────────────────────────── */
+
+.main {
+  background: var(--ds-bg-base);
+  overflow-y: auto;
+}
+
+.pane {
+  padding: var(--ds-section-gap);
+  max-width: var(--ds-container-max);
+}
+
+.pane.hidden { display: none; }
+
+.pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--ds-gutter);
+}
+
+.rule {
+  border: 0;
+  height: 1px;
+  background: var(--ds-border-subtle);
+  margin-bottom: var(--ds-section-gap);
+}
+
+/* ── + Add target dropdown ─────────────────────────────────────────────── */
+
+.add-target {
+  position: relative;
+}
+
+.add-target-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--ds-surface-elevated, var(--ds-surface-panel));
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius);
+  min-width: 160px;
+  padding: 4px;
+  z-index: 10;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+}
+
+.add-target-menu.hidden { display: none; }
+
+.add-target-menu button {
+  all: unset;
+  cursor: pointer;
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-md);
+  color: var(--ds-text-primary);
+  padding: 8px 12px;
+  border-radius: 4px;
+  text-align: left;
+}
+
+.add-target-menu button:hover {
+  background: var(--ds-surface-hover, rgba(255, 255, 255, 0.08));
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+
+.btn-primary {
+  all: unset;
+  cursor: pointer;
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-md);
+  font-weight: var(--ds-fw-label);
+  letter-spacing: var(--ds-ls-label-md);
+  color: var(--ds-text-on-primary);
+  background: var(--ds-accent);
+  padding: 8px 16px;
+  border-radius: var(--ds-radius);
+}
+.btn-primary:hover { background: color-mix(in srgb, var(--ds-accent) 85%, white); }
+.btn-primary:active { background: color-mix(in srgb, var(--ds-accent) 80%, black); }
+
+.btn-ghost {
+  all: unset;
+  cursor: pointer;
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-md);
+  font-weight: var(--ds-fw-label);
+  letter-spacing: var(--ds-ls-label-md);
+  color: var(--ds-text-primary);
+  padding: 6px 12px;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius);
+}
+.btn-ghost:hover { background: var(--ds-bg-hover); }
+
+.btn-ghost[disabled],
+.btn-ghost:disabled,
+.auto-toggle[disabled],
+.auto-toggle:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.btn-ghost.dashed { border-style: dashed; }
+
+.btn-ghost.warning {
+  color: var(--ds-warning);
+  border-color: color-mix(in srgb, var(--ds-warning) 40%, var(--ds-border-subtle));
+}
+
+/* ── Sync Card ───────────────────────────────────────────────────────────── */
+
+.card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-section-gap);
+}
+
+.sync-card {
+  background: var(--ds-bg-elevated);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-lg);
+  padding: var(--ds-gutter);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.status-dot.success { background: var(--ds-success); }
+.status-dot.warning { background: var(--ds-warning); }
+.status-dot.error   { background: var(--ds-error); }
+.status-dot.idle    { background: var(--ds-text-outline); }
+
+.card-platform {
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-headline-sm);
+  font-weight: var(--ds-fw-headline-sm);
+  color: var(--ds-text-primary);
+}
+
+.card-url {
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-md);
+  color: var(--ds-text-outline);
+}
+
+.card-top-right { margin-left: auto; }
+
+.auto-toggle {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-sm);
+  letter-spacing: var(--ds-ls-label-sm);
+  color: var(--ds-text-outline);
+}
+
+.auto-toggle.on { color: var(--ds-text-on-primary); }
+
+.auto-toggle .switch {
+  position: relative;
+  width: 26px;
+  height: 14px;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-bg-input);
+  transition: background 120ms ease;
+}
+
+.auto-toggle.on .switch { background: var(--ds-accent); }
+
+.auto-toggle .switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ds-text-outline);
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.auto-toggle.on .switch::after {
+  background: var(--ds-text-on-primary);
+  transform: translateX(12px);
+}
+
+.card-status-line {
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-md);
+  letter-spacing: var(--ds-ls-label-md);
+  color: var(--ds-text-muted);
+}
+
+.card-status-line.warning { color: var(--ds-warning); }
+.card-status-line.error   { color: var(--ds-error); }
+
+.card-summary {
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-body-md);
+  color: var(--ds-text-muted);
+}
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-actions .spacer { flex: 1; }
+
+/* ── Empty state ────────────────────────────────────────────────────────── */
+/* Shown when `config.targets[]` is empty (clean install before onboarding).
+   Onboarding still kicks off via the tray "Preferences…" → onboarding flow,
+   so we deliberately don't put a CTA here. */
+
+.sync-card.empty-state {
+  padding: calc(var(--ds-gutter) * 2);
+  gap: 4px;
+}
+
+.empty-title {
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-headline-sm);
+  font-weight: var(--ds-fw-headline-sm);
+  color: var(--ds-text-primary);
+}
+
+.empty-body {
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-body-md);
+  color: var(--ds-text-muted);
+}

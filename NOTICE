@@ -1,0 +1,35 @@
+Specter
+Copyright (C) 2026 aabergkvist AB, Stålverksgatan 1, 302 50 Halmstad, Sweden
+(org. no. 559317-4948). All rights reserved.
+
+This product includes Specter.DIY, the open-source edition of Specter, licensed
+under the GNU Affero General Public License, version 3.0 only (AGPL-3.0-only).
+See LICENSE.md for the full license text.
+
+"Specter" and "Specter.DIY", the Specter logo, app icons, and related brand
+assets are trademarks or trade dress of aabergkvist AB. Use of the source code
+under AGPLv3 does not grant any trademark rights. See TRADEMARK.md for permitted
+and restricted uses.
+
+Specter Pro is a separate commercial product distributed under its own End User
+License Agreement (EULA), not under AGPLv3.
+
+================================================================================
+Third-party components
+================================================================================
+
+Specter.DIY incorporates third-party open-source software. The copyright notices
+and license terms for those components are listed in THIRD-PARTY-NOTICES.md,
+generated at build time from the bundled dependency tree.
+
+Maintainer note: every bundled component must be verified compatible with both
+AGPLv3 (for Specter.DIY) and, where the same code is reused, with commercial
+distribution (for Specter Pro). Run the dependency license scan before each
+release. Entries use the format:
+
+  ------------------------------------------------------------------------
+  <component-name> <version>
+  Copyright (C) <year> <holder>
+  Licensed under: <SPDX-identifier>
+  Full text: licenses/<component>.txt
+  ------------------------------------------------------------------------
