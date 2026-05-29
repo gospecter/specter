@@ -146,7 +146,7 @@ The SpecterSync name, logo, app icons, release assets, and official branding are
 
 ## Who built this
 
-[Axel Antas-Bergkvist](https://github.com/aabergkvist) under [aabergkvist AB](https://aabergkvist.com) (Sweden). Specter started as a local Obsidian plugin in May 2026 to scratch the "edit Ghost in Obsidian without going through their web editor" itch; it's grown into a CMS-agnostic sync tool because the workflow turned out to apply far beyond Ghost.
+[Axel Antas-Bergkvist](https://github.com/aabergkvistnew) under [aabergkvist AB](https://aabergkvist.com) (Sweden). Specter started as a local Obsidian plugin to scratch the "edit Ghost in Obsidian without going through their web editor" itch; it's grown into a CMS-agnostic sync tool because the workflow turned out to apply far beyond Ghost.
 
 If SpecterSync DIY saves you time and you want the supported production lane, use [SpecterSync Pro](https://spectersync.com).
 
