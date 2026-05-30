@@ -1,8 +1,9 @@
 {
   "contributors": [
     "aabergkvist",
-    "aabergkvistnew"
+    "aabergkvistnew",
+    "charles-openclaw"
   ],
-  "message": "Thank you for your pull request! Before we can accept your contribution, we need you to sign our Contributor License Agreement (CLA).\n\nPlease read and sign the CLA here: https://github.com/aabergkvistnew/specter-diy/blob/main/CLA.md\n\nOnce you have signed, please post a comment containing `@cla-bot check` to re-check the status.",
+  "message": "Thank you for your pull request! Before we can accept your contribution, we need you to sign our Contributor License Agreement (CLA).\n\nPlease read and sign the CLA here: https://github.com/gospecter/specter/blob/main/CLA.md\n\nAfter a maintainer has recorded your acceptance, please post a comment containing `@cla-bot check` to re-check the status.",
   "label": "cla-signed"
 }
