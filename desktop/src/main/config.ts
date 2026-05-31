@@ -17,15 +17,20 @@ import path from 'path';
 import { configFilePath, configDir } from './paths.js';
 import {
   mergeTargetsForConfig,
+  normalizeContentKinds,
+  baseKind,
+  PLATFORM_KINDS,
   slugifyHandle,
   uniqueHandle,
   type AdapterConfig,
   type AppConfig,
+  type ContentKind,
+  type Platform,
   type TargetConfig,
 } from './config-merge.js';
 
-export { mergeTargetsForConfig };
-export type { AdapterConfig, AppConfig, TargetConfig };
+export { mergeTargetsForConfig, normalizeContentKinds, baseKind };
+export type { AdapterConfig, AppConfig, ContentKind, Platform, TargetConfig };
 
 const DEFAULTS: AppConfig = {
   ghostUrl: '',
@@ -58,6 +63,15 @@ export function readConfig(): AppConfig | null {
     const raw = fs.readFileSync(configFilePath(), 'utf8');
     const parsed = JSON.parse(raw) as Partial<AppConfig>;
     const merged = { ...DEFAULTS, ...parsed };
+    // Normalize each target's contentKinds for display: a legacy target with no
+    // `contentKinds` shows the platform's base kind (mirroring the daemon's
+    // backfill), and a present list is filtered to the platform's supported set.
+    if (merged.targets && merged.targets.length > 0) {
+      merged.targets = merged.targets.map((t) => ({
+        ...t,
+        contentKinds: normalizeContentKinds(t),
+      }));
+    }
     // Project targets[0] back onto legacy fields so the UI shows the right
     // values even if the user hasn't re-saved since v0.4.0.
     const first = merged.targets?.[0];
@@ -231,6 +245,39 @@ export function setTargetSyncMode(
 }
 
 /**
+ * Update a single target's `contentKinds` in place, filtered to the platform's
+ * supported set. Preserves every other target (and every other field on the
+ * touched target). Writes the config atomically. An empty array is valid
+ * ("sync nothing"). Returns false when the handle is unknown.
+ *
+ * Used by `config:set-target-content-kinds` so the dashboard can change which
+ * kinds a target syncs — notably Shopify, which has no in-app connect form.
+ */
+export function setTargetContentKinds(
+  handle: string,
+  contentKinds: ContentKind[],
+): { ok: true } | { ok: false; error: string } {
+  const current = readConfig();
+  if (!current) return { ok: false, error: 'No config on disk yet.' };
+  const targets = current.targets ?? [];
+  const idx = targets.findIndex((t) => t.handle === handle);
+  if (idx < 0) return { ok: false, error: `Unknown target: ${handle}` };
+
+  const supported = PLATFORM_KINDS[targets[idx].adapter.platform];
+  const filtered = contentKinds.filter((k) => supported.includes(k));
+  const nextTargets = targets.map((t, i) =>
+    i === idx ? { ...t, contentKinds: filtered } : t,
+  );
+
+  try {
+    writeConfigAtomic({ ...current, targets: nextTargets });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+/**
  * Add or update a WordPress target from the connect form. The site URL is
  * normalized (default https://, trailing slashes stripped) before persistence
  * so duplicate-detection (and the per-target folder name) work off a stable
@@ -241,6 +288,7 @@ export function upsertWordPressTarget(
   username: string,
   appPassword: string,
   label?: string,
+  contentKinds?: ContentKind[],
 ): void {
   const current = readConfig();
   if (!current?.vaultPath) {
@@ -275,6 +323,9 @@ export function upsertWordPressTarget(
     pullPublished: current.pullPublished,
     conflictStrategy: current.conflictStrategy,
     syncMode: current.syncMode,
+    // Editing keeps the prior selection unless the caller passes a new one;
+    // a brand-new target with no explicit selection opts into nothing ([]).
+    contentKinds: resolveContentKinds('wordpress', contentKinds, idx >= 0 ? targets[idx] : undefined),
     adapter: {
       platform: 'wordpress',
       siteUrl: normalizedUrl,
@@ -307,6 +358,7 @@ export function upsertGhostTarget(
   ghostUrl: string,
   adminApiKey: string,
   label?: string,
+  contentKinds?: ContentKind[],
 ): void {
   const current = readConfig();
   if (!current?.vaultPath) {
@@ -336,6 +388,7 @@ export function upsertGhostTarget(
     pullPublished: current.pullPublished,
     conflictStrategy: current.conflictStrategy,
     syncMode: current.syncMode,
+    contentKinds: resolveContentKinds('ghost', contentKinds, idx >= 0 ? targets[idx] : undefined),
     adapter: {
       platform: 'ghost',
       ghostUrl: normalizedUrl,
@@ -390,6 +443,30 @@ export function removeTarget(
   }
 }
 
+/**
+ * Resolve the `contentKinds` to persist for a Ghost/WordPress upsert.
+ *
+ * - An explicit selection (from the connect form) wins, filtered to the
+ *   platform's supported kinds. The connect renderer always passes one — even
+ *   an empty array, which is a valid "sync nothing" choice.
+ * - No explicit selection while EDITING an existing target → keep its prior
+ *   (normalized) selection so a label-only save doesn't wipe it.
+ * - No explicit selection on a BRAND-NEW target → empty array (opt-in: nothing
+ *   syncs until the user ticks a kind).
+ */
+function resolveContentKinds(
+  platform: Platform,
+  explicit: ContentKind[] | undefined,
+  existing: TargetConfig | undefined,
+): ContentKind[] {
+  const supported = PLATFORM_KINDS[platform];
+  if (Array.isArray(explicit)) {
+    return explicit.filter((k) => supported.includes(k));
+  }
+  if (existing) return normalizeContentKinds(existing);
+  return [];
+}
+
 function normalizeGhostUrl(raw: string): string {
   let s = raw.trim();
   if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
@@ -419,7 +496,11 @@ export interface ShopifyTokenFields {
   refreshTokenExpiresAt?: string;
 }
 
-export function upsertShopifyTarget(shop: string, token: string | ShopifyTokenFields): void {
+export function upsertShopifyTarget(
+  shop: string,
+  token: string | ShopifyTokenFields,
+  contentKinds?: ContentKind[],
+): void {
   const current = readConfig();
   if (!current?.vaultPath) {
     throw new Error('Set up a local sync folder before connecting Shopify.');
@@ -450,6 +531,15 @@ export function upsertShopifyTarget(shop: string, token: string | ShopifyTokenFi
     pullPublished: current.pullPublished,
     conflictStrategy: current.conflictStrategy,
     syncMode: current.syncMode,
+    // Shopify has no connect form — a freshly OAuth'd store defaults to the
+    // base post kind ['article'] (the user changes it later via Edit). An
+    // explicit list (Edit path) overrides; an existing store keeps its prior
+    // selection when none is passed.
+    contentKinds:
+      contentKinds ??
+      (idx >= 0
+        ? normalizeContentKinds(targets[idx])
+        : [baseKind('shopify')]),
     adapter: {
       platform: 'shopify',
       shop,

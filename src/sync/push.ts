@@ -87,6 +87,13 @@ async function processLocalPost(
 ): Promise<void> {
   const { frontmatter, title, content, file } = localPost;
 
+  // Content-kind opt-in: never push a file whose kind the target hasn't
+  // enabled (e.g. a leftover `page` .md when only posts are turned on).
+  if (!settings.contentKinds.includes(contentKind(frontmatter))) {
+    result.skipped.push(title || file.basename);
+    return;
+  }
+
   const localModified = hasLocalChanges(file.mtime, frontmatter);
   if (!localModified && frontmatter.ghost_id) {
     result.skipped.push(title || file.basename);

@@ -28,6 +28,7 @@ export async function statusCommand(): Promise<void> {
     console.log(`▸ ${t.handle}  [${t.adapter.platform}]  "${t.label}"`);
     console.log(`    Folder:      ${root}`);
     console.log(`    Conflict:    ${t.conflictStrategy}   Mode: ${t.syncMode}`);
+    console.log(`    Syncs:       ${t.contentKinds.length ? t.contentKinds.join(', ') : '(nothing — no content kinds enabled)'}`);
     console.log(`    Pull:        drafts=${t.pullDrafts} published=${t.pullPublished}`);
     if (ts) {
       console.log(`    Last sync:   ${ts.lastSyncAt ?? 'never'}  (${ts.lastSyncStatus ?? 'never'})`);

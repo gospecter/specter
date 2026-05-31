@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   mergeTargetsForConfig,
+  normalizeContentKinds,
+  baseKind,
+  platformKinds,
   slugifyHandle,
   uniqueHandle,
   type AppConfig,
@@ -44,16 +47,19 @@ describe('desktop config target merge (non-destructive)', () => {
       ghostUrl: 'http://localhost:2368',
       adminApiKey: 'id:secret',
     });
+    // First-run Ghost migrates to its base post kind.
+    expect(targets[0].contentKinds).toEqual(['post']);
   });
 
-  it('preserves an existing Shopify-only list verbatim — never prepends a phantom Ghost', () => {
+  it('preserves an existing Shopify-only list — never prepends a phantom Ghost — and backfills contentKinds', () => {
     const targets = mergeTargetsForConfig([shopify], base);
     expect(targets).toHaveLength(1);
-    expect(targets[0]).toEqual(shopify);
+    // A legacy target (no contentKinds) is backfilled to the platform base kind.
+    expect(targets[0]).toEqual({ ...shopify, contentKinds: ['article'] });
     expect(targets.some((t) => t.adapter.platform === 'ghost')).toBe(false);
   });
 
-  it('preserves a multi-target list verbatim without dropping targets[1..N]', () => {
+  it('preserves a multi-target list without dropping targets[1..N], normalizing contentKinds', () => {
     const ghost: TargetConfig = {
       handle: 'ghost',
       label: 'Ghost',
@@ -62,15 +68,48 @@ describe('desktop config target merge (non-destructive)', () => {
       pullPublished: true,
       conflictStrategy: 'ask',
       syncMode: 'manual',
+      contentKinds: ['post', 'page'],
       adapter: { platform: 'ghost', ghostUrl: 'https://a.example', adminApiKey: 'a:1' },
     };
     const ghost2: TargetConfig = {
       ...ghost,
       handle: 'b-example',
+      contentKinds: [], // explicit "sync nothing" — preserved verbatim
       adapter: { platform: 'ghost', ghostUrl: 'https://b.example', adminApiKey: 'b:2' },
     };
     const targets = mergeTargetsForConfig([ghost, ghost2, shopify], base);
-    expect(targets).toEqual([ghost, ghost2, shopify]);
+    expect(targets).toEqual([
+      ghost,
+      ghost2,
+      { ...shopify, contentKinds: ['article'] },
+    ]);
+  });
+});
+
+describe('content-kind helpers (mirror the daemon)', () => {
+  it('platformKinds offers each platform its kinds in the daemon order', () => {
+    expect(platformKinds('ghost')).toEqual(['post', 'page']);
+    expect(platformKinds('wordpress')).toEqual(['post', 'page']);
+    expect(platformKinds('shopify')).toEqual(['article', 'page', 'product']);
+  });
+
+  it('baseKind is the platform base post kind', () => {
+    expect(baseKind('ghost')).toBe('post');
+    expect(baseKind('wordpress')).toBe('post');
+    expect(baseKind('shopify')).toBe('article');
+  });
+
+  it('normalizeContentKinds: absent → base kind; present → filtered to supported', () => {
+    const legacy = { ...shopify } as TargetConfig;
+    delete (legacy as { contentKinds?: unknown }).contentKinds;
+    expect(normalizeContentKinds(legacy)).toEqual(['article']);
+
+    const filtered = { ...shopify, contentKinds: ['article', 'post'] } as TargetConfig;
+    // 'post' isn't a Shopify kind — dropped.
+    expect(normalizeContentKinds(filtered)).toEqual(['article']);
+
+    const empty = { ...shopify, contentKinds: [] } as TargetConfig;
+    expect(normalizeContentKinds(empty)).toEqual([]);
   });
 });
 

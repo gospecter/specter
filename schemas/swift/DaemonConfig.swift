@@ -10,6 +10,11 @@ import Foundation
 public struct DaemonConfig: Equatable {
     public let adminAPIKey: String
     public let conflictStrategy: ConflictStrategy
+    /// Which content kinds this target syncs, in BOTH directions. Empty = sync nothing. Pull
+    /// lists only these kinds; push skips local files whose `cms_kind` is not in this list.
+    /// Nothing is enabled implicitly — a kind only syncs once the user opts into it (e.g.
+    /// `['post']`, `['post','page']`, Shopify `['article','product']`).
+    public let contentKinds: [String]
     public let ghostURL: String
     public let pullDrafts, pullPublished: Bool
     public let syncFolderPath: String
@@ -26,9 +31,10 @@ public struct DaemonConfig: Equatable {
     /// Debounce window (ms) for the file watcher before flushing changes.
     public let watchDebounceMS: Double
 
-    public init(adminAPIKey: String, conflictStrategy: ConflictStrategy, ghostURL: String, pullDrafts: Bool, pullPublished: Bool, syncFolderPath: String, syncMode: SyncMode, targets: [TargetConfig], vaultPath: String, watchDebounceMS: Double) {
+    public init(adminAPIKey: String, conflictStrategy: ConflictStrategy, contentKinds: [String], ghostURL: String, pullDrafts: Bool, pullPublished: Bool, syncFolderPath: String, syncMode: SyncMode, targets: [TargetConfig], vaultPath: String, watchDebounceMS: Double) {
         self.adminAPIKey = adminAPIKey
         self.conflictStrategy = conflictStrategy
+        self.contentKinds = contentKinds
         self.ghostURL = ghostURL
         self.pullDrafts = pullDrafts
         self.pullPublished = pullPublished
@@ -67,6 +73,11 @@ public struct TargetConfig: Equatable {
     /// CMS credentials. Discriminated by `platform`.
     public let adapter: AdapterConfig
     public let conflictStrategy: ConflictStrategy
+    /// Which content kinds this target syncs (both directions). Opt-in: nothing syncs unless
+    /// listed. Pull lists only these kinds; push skips local files whose `cms_kind` is not
+    /// enabled. Legacy configs (no field) migrate to the platform's base post kind on load so
+    /// existing post sync is preserved.
+    public let contentKinds: [String]
     /// URL-safe handle — also the folder name when multiple targets are configured.
     public let handle: String
     /// Display label, e.g. "My Ghost Blog".
@@ -77,9 +88,10 @@ public struct TargetConfig: Equatable {
     public let syncFolderPath: String
     public let syncMode: SyncMode
 
-    public init(adapter: AdapterConfig, conflictStrategy: ConflictStrategy, handle: String, label: String, pullDrafts: Bool, pullPublished: Bool, syncFolderPath: String, syncMode: SyncMode) {
+    public init(adapter: AdapterConfig, conflictStrategy: ConflictStrategy, contentKinds: [String], handle: String, label: String, pullDrafts: Bool, pullPublished: Bool, syncFolderPath: String, syncMode: SyncMode) {
         self.adapter = adapter
         self.conflictStrategy = conflictStrategy
+        self.contentKinds = contentKinds
         self.handle = handle
         self.label = label
         self.pullDrafts = pullDrafts

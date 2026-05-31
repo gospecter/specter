@@ -7,11 +7,20 @@
  * supervisor is restarted so the new target is picked up by the watcher.
  */
 
+import type { ContentKind } from '../preload-types.js';
+
 const $ = (id: string) => document.getElementById(id)!;
+
+// WordPress offers post + page, in this order (mirrors the daemon's PLATFORM_KINDS).
+const WP_KINDS: { kind: ContentKind; label: string }[] = [
+  { kind: 'post', label: 'Posts' },
+  { kind: 'page', label: 'Pages' },
+];
 
 const siteUrlInput = $('wp-site-url') as HTMLInputElement;
 const usernameInput = $('wp-username') as HTMLInputElement;
 const appPasswordInput = $('wp-app-password') as HTMLInputElement;
+const kindsGroup = $('wp-kinds');
 const labelInput = document.getElementById('wp-label') as HTMLInputElement | null;
 const testBtn = $('btn-test') as HTMLButtonElement;
 const connectBtn = $('btn-connect') as HTMLButtonElement;
@@ -23,6 +32,35 @@ const helpLink = $('wp-help-link') as HTMLAnchorElement;
 
 let testPassed = false;
 let editingHandle: string | null = null;
+
+// Render the content-kind checkboxes. Nothing checked for a fresh add (opt-in);
+// `selected` pre-checks them when editing an existing site.
+function renderKinds(selected: ContentKind[] = []): void {
+  kindsGroup.innerHTML = '';
+  WP_KINDS.forEach(({ kind, label }) => {
+    const id = `wp-kind-${kind}`;
+    const wrap = document.createElement('label');
+    wrap.className = 'kind-option';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = id;
+    cb.value = kind;
+    cb.checked = selected.includes(kind);
+    const span = document.createElement('span');
+    span.textContent = label;
+    wrap.append(cb, span);
+    kindsGroup.appendChild(wrap);
+  });
+}
+
+function selectedKinds(): ContentKind[] {
+  return WP_KINDS.map((k) => k.kind).filter((kind) => {
+    const cb = document.getElementById(`wp-kind-${kind}`) as HTMLInputElement | null;
+    return !!cb?.checked;
+  });
+}
+
+renderKinds();
 
 function updateButtons(): void {
   const hasFields =
@@ -110,7 +148,13 @@ connectBtn.addEventListener('click', async () => {
 
   const label = labelInput?.value.trim() || undefined;
   try {
-    const result = await window.api.wordpress.connect(siteUrl, username, appPassword, label);
+    const result = await window.api.wordpress.connect(
+      siteUrl,
+      username,
+      appPassword,
+      label,
+      selectedKinds(),
+    );
     if (result.ok) {
       window.close();
     } else {
@@ -139,6 +183,7 @@ async function init(): Promise<void> {
       if (pending.username) usernameInput.value = pending.username;
       if (pending.appPassword) appPasswordInput.value = pending.appPassword;
       if (labelInput && pending.label) labelInput.value = pending.label;
+      if (pending.contentKinds) renderKinds(pending.contentKinds);
     }
   } catch {
     /* fresh add flow */

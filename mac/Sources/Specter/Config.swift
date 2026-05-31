@@ -53,6 +53,47 @@ struct DaemonConfig: Codable {
     }
 }
 
+/// Content kinds a platform can sync, and the per-platform availability /
+/// base-kind conventions. Mirrors `PLATFORM_KINDS` / `basePostKind` in
+/// src/config.ts EXACTLY — the daemon is the source of truth and the Mac UI
+/// must offer the same kinds in the same order, or it would let users tick a
+/// kind the daemon will silently drop (and the legacy-migration default must
+/// match so a re-save doesn't change what a legacy target syncs).
+enum ContentKinds {
+    /// Available kinds per platform, in the order the UI should offer them.
+    /// First entry is the base post kind (the legacy-migration default).
+    static func available(for platform: Platform) -> [String] {
+        switch platform {
+        case .ghost:     return ["post", "page"]
+        case .wordpress: return ["post", "page"]
+        case .shopify:   return ["article", "page", "product"]
+        }
+    }
+
+    /// What a legacy target (no explicit `contentKinds`) migrates to so
+    /// existing post sync keeps working. = first entry of `available`.
+    static func basePostKind(for platform: Platform) -> String {
+        available(for: platform).first ?? "post"
+    }
+
+    /// Human label for a kind in list/summary copy (pluralized).
+    static func pluralLabel(_ kind: String) -> String {
+        switch kind {
+        case "post":    return "posts"
+        case "page":    return "pages"
+        case "article": return "articles"
+        case "product": return "products"
+        default:        return kind + "s"
+        }
+    }
+
+    /// "Syncs: posts, pages" / "Syncs: nothing" for the Settings list + cards.
+    static func summary(_ kinds: [String]) -> String {
+        guard !kinds.isEmpty else { return "Syncs: nothing" }
+        return "Syncs: " + kinds.map(pluralLabel).joined(separator: ", ")
+    }
+}
+
 /// Per-target configuration — one CMS connection plus the engine-visible
 /// sync settings. Mirrors TS `TargetConfig` in src/config.ts.
 struct TargetConfig: Codable, Equatable {
@@ -63,7 +104,64 @@ struct TargetConfig: Codable, Equatable {
     var pullPublished: Bool
     var conflictStrategy: String
     var syncMode: String
+    /// Which content kinds sync in BOTH directions for this target. Opt-in:
+    /// empty array = "sync nothing". Mirrors TS `TargetConfig.contentKinds`.
+    var contentKinds: [String]
     var adapter: AdapterConfig
+
+    private enum CodingKeys: String, CodingKey {
+        case handle, label, syncFolderPath, pullDrafts, pullPublished
+        case conflictStrategy, syncMode, contentKinds, adapter
+    }
+
+    init(
+        handle: String,
+        label: String,
+        syncFolderPath: String,
+        pullDrafts: Bool,
+        pullPublished: Bool,
+        conflictStrategy: String,
+        syncMode: String,
+        contentKinds: [String],
+        adapter: AdapterConfig
+    ) {
+        self.handle = handle
+        self.label = label
+        self.syncFolderPath = syncFolderPath
+        self.pullDrafts = pullDrafts
+        self.pullPublished = pullPublished
+        self.conflictStrategy = conflictStrategy
+        self.syncMode = syncMode
+        self.contentKinds = contentKinds
+        self.adapter = adapter
+    }
+
+    /// Custom decoder so legacy configs written before `contentKinds` existed
+    /// still load: when the key is absent we MIGRATE to the platform's base
+    /// post kind (matching the daemon's `normalizeContentKinds`), so a
+    /// pre-existing target keeps syncing posts and the UI shows the migrated
+    /// value. Present values (incl. `[]`) are filtered to kinds the platform
+    /// actually supports — same as the daemon.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        handle = try c.decode(String.self, forKey: .handle)
+        label = try c.decode(String.self, forKey: .label)
+        syncFolderPath = try c.decode(String.self, forKey: .syncFolderPath)
+        pullDrafts = try c.decode(Bool.self, forKey: .pullDrafts)
+        pullPublished = try c.decode(Bool.self, forKey: .pullPublished)
+        conflictStrategy = try c.decode(String.self, forKey: .conflictStrategy)
+        syncMode = try c.decode(String.self, forKey: .syncMode)
+        adapter = try c.decode(AdapterConfig.self, forKey: .adapter)
+
+        let platform = adapter.platform
+        let supported = ContentKinds.available(for: platform)
+        if let raw = try c.decodeIfPresent([String].self, forKey: .contentKinds) {
+            contentKinds = raw.filter { supported.contains($0) }
+        } else {
+            // Legacy target: migrate to the base post kind.
+            contentKinds = [ContentKinds.basePostKind(for: platform)]
+        }
+    }
 }
 
 /// CMS adapter configuration. Discriminated by `platform`. Mirrors TS
@@ -93,6 +191,16 @@ enum AdapterConfig: Codable, Equatable {
         var siteUrl: String
         var username: String
         var appPassword: String
+    }
+
+    /// The `Platform` this adapter belongs to — used to resolve available
+    /// content kinds and the legacy-migration base kind.
+    var platform: Platform {
+        switch self {
+        case .ghost:     return .ghost
+        case .shopify:   return .shopify
+        case .wordpress: return .wordpress
+        }
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -240,6 +348,7 @@ enum ConfigStore {
         siteUrl: String,
         username: String,
         appPassword: String,
+        contentKinds: [String],
         label: String? = nil,
         editingHandle: String? = nil
     ) throws {
@@ -274,6 +383,7 @@ enum ConfigStore {
         if let idx = existingIdx {
             targets[idx].label = resolvedLabel
             targets[idx].adapter = adapter
+            targets[idx].contentKinds = contentKinds
         } else {
             let taken = targets.map { $0.handle }
             let handle = TargetHandle.unique(base: host, taken: taken)
@@ -285,6 +395,7 @@ enum ConfigStore {
                 pullPublished: config.pullPublished,
                 conflictStrategy: config.conflictStrategy,
                 syncMode: config.syncMode,
+                contentKinds: contentKinds,
                 adapter: adapter
             ))
         }
@@ -306,13 +417,22 @@ enum ConfigStore {
         return host.lowercased()
     }
 
+    /// `contentKinds`:
+    ///   - nil (the OAuth completion path — there's no form to pick at
+    ///     creation) → a NEW store is created with the base kind `["article"]`
+    ///     so existing post-style sync works out of the box; an EXISTING store
+    ///     being re-authorized keeps whatever kinds the user already chose.
+    ///   - non-nil (the per-card Edit path) → written verbatim for both new and
+    ///     existing rows.
     static func upsertShopifyTarget(
         shop: String,
         accessToken: String,
         refreshToken: String? = nil,
         accessTokenExpiresAt: String? = nil,
         refreshTokenExpiresAt: String? = nil,
-        scope: String? = nil
+        scope: String? = nil,
+        contentKinds: [String]? = nil,
+        editingHandle: String? = nil
     ) throws {
         guard var config = load(), !config.vaultPath.isEmpty else {
             throw ConfigError.missingBaseConfig
@@ -329,15 +449,21 @@ enum ConfigStore {
 
         var targets = config.targets ?? []
         if let idx = targets.firstIndex(where: {
+            if let editingHandle { return $0.handle == editingHandle }
             if case .shopify(let s) = $0.adapter { return s.shop == shop }
             return false
         }) {
-            // Same store re-authorized: refresh credentials, keep handle/folder.
+            // Same store re-authorized (or edited): refresh credentials, keep
+            // handle/folder. Only overwrite contentKinds when the caller passed
+            // an explicit list (Edit) — OAuth re-auth (nil) preserves the
+            // user's prior choices.
             targets[idx].adapter = adapter
+            if let contentKinds { targets[idx].contentKinds = contentKinds }
         } else {
             // New store: unique slugified handle from the shop domain, and an
             // empty syncFolderPath so the daemon gives it its own `<handle>/`
             // folder. A hardcoded shared folder would collide with a second store.
+            // No creation form for Shopify, so default to the base kind.
             let taken = targets.map { $0.handle }
             let handle = TargetHandle.unique(base: shop, taken: taken)
             targets.append(TargetConfig(
@@ -348,6 +474,7 @@ enum ConfigStore {
                 pullPublished: config.pullPublished,
                 conflictStrategy: config.conflictStrategy,
                 syncMode: config.syncMode,
+                contentKinds: contentKinds ?? [ContentKinds.basePostKind(for: .shopify)],
                 adapter: adapter
             ))
         }
@@ -366,6 +493,7 @@ enum ConfigStore {
     static func upsertGhostTarget(
         ghostUrl: String,
         adminApiKey: String,
+        contentKinds: [String],
         label: String? = nil,
         editingHandle: String? = nil
     ) throws {
@@ -395,6 +523,7 @@ enum ConfigStore {
         if let idx = existingIdx {
             targets[idx].label = resolvedLabel
             targets[idx].adapter = adapter
+            targets[idx].contentKinds = contentKinds
         } else {
             let base = host == "ghost" ? resolvedLabel : host
             let taken = targets.map { $0.handle }
@@ -407,6 +536,7 @@ enum ConfigStore {
                 pullPublished: config.pullPublished,
                 conflictStrategy: config.conflictStrategy,
                 syncMode: config.syncMode,
+                contentKinds: contentKinds,
                 adapter: adapter
             ))
         }
@@ -517,6 +647,9 @@ enum ConfigStore {
             pullPublished: legacy.pullPublished,
             conflictStrategy: legacy.conflictStrategy,
             syncMode: legacy.syncMode,
+            // First-run onboarding has no kind picker — synthesize the base
+            // post kind, matching the daemon's `synthesizeLegacyTarget`.
+            contentKinds: [ContentKinds.basePostKind(for: .ghost)],
             adapter: .ghost(.init(
                 ghostUrl: legacy.ghostUrl,
                 adminApiKey: legacy.adminApiKey

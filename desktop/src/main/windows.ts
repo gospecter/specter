@@ -51,6 +51,8 @@ export interface PendingConnect {
   /** Present only when editing an existing target. */
   handle?: string;
   label?: string;
+  /** Pre-filled content-kind selection when editing; absent for a fresh add. */
+  contentKinds?: string[];
   // Ghost
   ghostUrl?: string;
   adminApiKey?: string;

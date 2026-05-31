@@ -6,8 +6,8 @@
  * truth for the questions.
  */
 
-import { AdapterConfig } from '../cms/types.js';
-import { TargetConfig } from '../config.js';
+import { AdapterConfig, ContentKind } from '../cms/types.js';
+import { PLATFORM_KINDS, TargetConfig } from '../config.js';
 
 export type Ask = (question: string, fallback: string) => Promise<string>;
 
@@ -77,6 +77,35 @@ export async function promptAdapter(
     (existing?.platform === 'shopify' && existing.apiVersion) || '2024-04',
   );
   return { platform: 'shopify', shop, accessToken, apiVersion };
+}
+
+/**
+ * Prompt for which content kinds this target should sync. Opt-in: the user
+ * picks from the platform's available kinds; nothing is enabled implicitly.
+ * `current` seeds the default answer (current selection when editing, empty
+ * when adding). Returns the validated, platform-supported subset.
+ */
+export async function promptContentKinds(
+  ask: Ask,
+  platform: Platform,
+  current: ContentKind[] = [],
+): Promise<ContentKind[]> {
+  const available = PLATFORM_KINDS[platform];
+  const fallback = current.length > 0 ? current.join(',') : '';
+  const answer = await ask(
+    `Content to sync — comma-separated from [${available.join(', ')}] (blank = nothing)`,
+    fallback,
+  );
+  const picked = answer
+    .split(/[,\s]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .filter((k): k is ContentKind => (available as string[]).includes(k));
+  if (picked.length === 0) {
+    console.log('  ⚠️  No content kinds selected — this target will sync nothing until you enable one.');
+  }
+  // De-dupe while preserving the platform's canonical order.
+  return available.filter((k) => picked.includes(k));
 }
 
 /** The per-target sync preferences (everything on a target except handle/adapter). */

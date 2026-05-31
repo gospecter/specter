@@ -166,3 +166,29 @@ h1 {
   color: var(--text);
   border: 1px solid var(--border);
 }
+
+.kinds-field {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: var(--space-sm, 10px) var(--space-md, 12px);
+  margin: 0;
+}
+
+.kinds-help {
+  margin: 2px 0 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.kinds-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.kind-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}

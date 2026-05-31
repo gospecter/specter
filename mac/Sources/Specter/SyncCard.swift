@@ -18,6 +18,9 @@ struct SyncTarget: Identifiable, Hashable {
     var conflictCount: Int = 0
     /// User-facing label from `TargetConfig.label` (e.g. "Marketing blog").
     var label: String = ""
+    /// Content kinds this target syncs (both directions). Drives the
+    /// "Syncs: posts, pages" line. Empty = syncs nothing.
+    var contentKinds: [String] = []
 }
 
 struct SyncCard: View {
@@ -75,6 +78,11 @@ struct SyncCard: View {
             Text(target.summary)
                 .font(DS.Typography.bodyMd())
                 .foregroundStyle(DS.Text.muted)
+
+            // Content-kind line — what this target actually syncs.
+            Text(ContentKinds.summary(target.contentKinds))
+                .font(DS.Typography.labelSm())
+                .foregroundStyle(target.contentKinds.isEmpty ? DS.Status.warning : DS.Text.outline)
 
             // Actions
             HStack(spacing: 8) {

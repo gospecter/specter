@@ -53,6 +53,7 @@ import {
   upsertWordPressTarget,
   upsertShopifyTarget,
   removeTarget,
+  setTargetContentKinds,
 } from '../../desktop/src/main/config';
 import { configFilePath } from '../../desktop/src/main/paths';
 
@@ -194,5 +195,94 @@ describe('removeTarget', () => {
     const result = removeTarget(ghostHandle);
     expect(result.ok).toBe(true);
     expect(onDiskTargets()).toHaveLength(0);
+  });
+});
+
+describe('contentKinds — opt-in selection', () => {
+  it('first-run synthesized Ghost target normalizes to base kind ["post"]', () => {
+    // seedBaseConfig wrote a legacy flat Ghost config (no contentKinds).
+    expect(onDiskTargets()[0].contentKinds).toEqual(['post']);
+  });
+
+  it('a NEW Ghost blog persists exactly the chosen contentKinds', () => {
+    upsertGhostTarget('https://blog-two.example.com', 'two:secret', 'Blog Two', ['post', 'page']);
+    const second = onDiskTargets()[1];
+    expect(second.contentKinds).toEqual(['post', 'page']);
+  });
+
+  it('a NEW Ghost blog with no selection opts into NOTHING (empty array)', () => {
+    upsertGhostTarget('https://blog-three.example.com', 'three:secret', 'Three');
+    const t = onDiskTargets().find(
+      (x) => x.adapter.ghostUrl === 'https://blog-three.example.com',
+    )!;
+    expect(t.contentKinds).toEqual([]);
+  });
+
+  it('a NEW WordPress site persists the chosen contentKinds and filters unsupported kinds', () => {
+    // 'product' is Shopify-only — it must be filtered out for WordPress.
+    upsertWordPressTarget('https://wp.example.com', 'admin', 'app pass word', 'WP', [
+      'page',
+      'product',
+    ]);
+    const wp = onDiskTargets().find((t) => t.adapter.platform === 'wordpress')!;
+    expect(wp.contentKinds).toEqual(['page']);
+  });
+
+  it('a NEW Shopify store (OAuth, no form) defaults to base kind ["article"]', () => {
+    upsertShopifyTarget('store-a.myshopify.com', 'shpat_a');
+    const shop = onDiskTargets().find((t) => t.adapter.platform === 'shopify')!;
+    expect(shop.contentKinds).toEqual(['article']);
+  });
+
+  it('editing a target changes its contentKinds, preserving the rest', () => {
+    upsertGhostTarget('https://blog-two.example.com', 'two:secret', 'Blog Two', ['post']);
+    const handle = onDiskTargets().find(
+      (t) => t.adapter.ghostUrl === 'https://blog-two.example.com',
+    )!.handle;
+
+    const result = setTargetContentKinds(handle, ['post', 'page']);
+    expect(result.ok).toBe(true);
+
+    const edited = onDiskTargets().find((t) => t.handle === handle)!;
+    expect(edited.contentKinds).toEqual(['post', 'page']);
+    // The synthesized Ghost target[0] is untouched.
+    expect(onDiskTargets()[0].contentKinds).toEqual(['post']);
+  });
+
+  it('setTargetContentKinds accepts an empty array ("sync nothing")', () => {
+    const handle = onDiskTargets()[0].handle;
+    const result = setTargetContentKinds(handle, []);
+    expect(result.ok).toBe(true);
+    expect(onDiskTargets()[0].contentKinds).toEqual([]);
+  });
+
+  it('setTargetContentKinds returns an error for an unknown handle', () => {
+    expect(setTargetContentKinds('nope', ['post']).ok).toBe(false);
+  });
+
+  it('a legacy target on disk WITHOUT contentKinds normalizes to base kind on read', () => {
+    // Simulate a config.json written by an older build: targets without the
+    // field. Write it raw, bypassing the upsert helpers.
+    const cfg = readConfig()!;
+    const raw = {
+      ...cfg,
+      targets: [
+        {
+          handle: 'legacy-wp',
+          label: 'Legacy WP',
+          syncFolderPath: '',
+          pullDrafts: true,
+          pullPublished: true,
+          conflictStrategy: 'ask',
+          syncMode: 'manual',
+          // NOTE: no contentKinds field.
+          adapter: { platform: 'wordpress', siteUrl: 'https://old.example.com', username: 'u', appPassword: 'p' },
+        },
+      ],
+    };
+    files.set(CONFIG_PATH, JSON.stringify(raw, null, 2) + '\n');
+
+    const legacy = onDiskTargets().find((t) => t.handle === 'legacy-wp')!;
+    expect(legacy.contentKinds).toEqual(['post']); // WordPress base kind
   });
 });

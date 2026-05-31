@@ -10,7 +10,7 @@ import { FakeGhostApi, makeGhostPost } from '../fakes/FakeGhostApi.js';
 import { makeTmpVault, readFile, writeFile } from '../fakes/tmpVault.js';
 
 function settings(overrides: Partial<GhostSyncSettings> = {}): GhostSyncSettings {
-  return { ...DEFAULT_SETTINGS, syncFolderPath: '', ...overrides };
+  return { ...DEFAULT_SETTINGS, syncFolderPath: '', contentKinds: ['post', 'page'], ...overrides };
 }
 
 describe('SyncEngine.push', () => {

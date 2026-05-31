@@ -9,6 +9,8 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 
+export type ContentKind = 'post' | 'page' | 'article' | 'product';
+
 export interface AppConfig {
   ghostUrl: string;
   adminApiKey: string;
@@ -78,6 +80,10 @@ export interface DashboardTarget {
   summary: string;
   autoSync: boolean;
   conflictCount?: number;
+  /** Kinds this target syncs, in platform order (e.g. ['post','page']). */
+  contentKinds: ContentKind[];
+  /** All kinds this target's platform can offer (for the Edit picker). */
+  availableKinds: ContentKind[];
 }
 
 export interface DashboardSnapshot {
@@ -91,6 +97,7 @@ export interface PendingConnect {
   platform: 'ghost' | 'wordpress';
   handle?: string;
   label?: string;
+  contentKinds?: ContentKind[];
   ghostUrl?: string;
   adminApiKey?: string;
   siteUrl?: string;
@@ -115,12 +122,22 @@ const api = {
       ipcRenderer.invoke('config:remove-target', { handle }),
     editTarget: (handle: string): Promise<ApiResult> =>
       ipcRenderer.invoke('config:edit-target', { handle }),
+    setTargetContentKinds: (
+      handle: string,
+      contentKinds: ContentKind[],
+    ): Promise<ApiResult> =>
+      ipcRenderer.invoke('config:set-target-content-kinds', { handle, contentKinds }),
   },
   ghost: {
     test: (url: string, key: string): Promise<ApiResult> =>
       ipcRenderer.invoke('ghost:test', url, key),
-    connect: (ghostUrl: string, adminApiKey: string, label?: string): Promise<ApiResult> =>
-      ipcRenderer.invoke('ghost:connect', { ghostUrl, adminApiKey, label }),
+    connect: (
+      ghostUrl: string,
+      adminApiKey: string,
+      label?: string,
+      contentKinds?: ContentKind[],
+    ): Promise<ApiResult> =>
+      ipcRenderer.invoke('ghost:connect', { ghostUrl, adminApiKey, label, contentKinds }),
   },
   connect: {
     pending: (): Promise<PendingConnect | null> =>
@@ -134,8 +151,15 @@ const api = {
       username: string,
       appPassword: string,
       label?: string,
+      contentKinds?: ContentKind[],
     ): Promise<ApiResult> =>
-      ipcRenderer.invoke('wordpress:connect', { siteUrl, username, appPassword, label }),
+      ipcRenderer.invoke('wordpress:connect', {
+        siteUrl,
+        username,
+        appPassword,
+        label,
+        contentKinds,
+      }),
   },
   daemon: {
     status: (): Promise<DaemonStatusResult> =>

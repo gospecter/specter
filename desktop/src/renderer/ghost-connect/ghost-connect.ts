@@ -13,11 +13,20 @@
  * pre-fill the form. The same handle is reused on save.
  */
 
+import type { ContentKind } from '../preload-types.js';
+
 const $ = (id: string) => document.getElementById(id)!;
+
+// Ghost offers post + page, in this order (mirrors the daemon's PLATFORM_KINDS).
+const GHOST_KINDS: { kind: ContentKind; label: string }[] = [
+  { kind: 'post', label: 'Posts' },
+  { kind: 'page', label: 'Pages' },
+];
 
 const labelInput = $('gh-label') as HTMLInputElement;
 const urlInput = $('gh-url') as HTMLInputElement;
 const keyInput = $('gh-key') as HTMLInputElement;
+const kindsGroup = $('gh-kinds');
 const titleEl = $('gh-title');
 const testBtn = $('btn-test') as HTMLButtonElement;
 const connectBtn = $('btn-connect') as HTMLButtonElement;
@@ -28,6 +37,35 @@ const saveError = $('save-error');
 
 let testPassed = false;
 let editingHandle: string | null = null;
+
+// Render the content-kind checkboxes. Nothing checked for a fresh add (opt-in);
+// `selected` pre-checks them when editing an existing blog.
+function renderKinds(selected: ContentKind[] = []): void {
+  kindsGroup.innerHTML = '';
+  GHOST_KINDS.forEach(({ kind, label }) => {
+    const id = `gh-kind-${kind}`;
+    const wrap = document.createElement('label');
+    wrap.className = 'kind-option';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = id;
+    cb.value = kind;
+    cb.checked = selected.includes(kind);
+    const span = document.createElement('span');
+    span.textContent = label;
+    wrap.append(cb, span);
+    kindsGroup.appendChild(wrap);
+  });
+}
+
+function selectedKinds(): ContentKind[] {
+  return GHOST_KINDS.map((k) => k.kind).filter((kind) => {
+    const cb = document.getElementById(`gh-kind-${kind}`) as HTMLInputElement | null;
+    return !!cb?.checked;
+  });
+}
+
+renderKinds();
 
 function updateButtons(): void {
   const hasCreds = !!urlInput.value.trim() && !!keyInput.value.trim();
@@ -90,7 +128,7 @@ connectBtn.addEventListener('click', async () => {
   connectBtn.disabled = true;
 
   try {
-    const result = await window.api.ghost.connect(url, key, label);
+    const result = await window.api.ghost.connect(url, key, label, selectedKinds());
     if (result.ok) {
       window.close();
     } else {
@@ -118,6 +156,7 @@ async function init(): Promise<void> {
       if (pending.label) labelInput.value = pending.label;
       if (pending.ghostUrl) urlInput.value = pending.ghostUrl;
       if (pending.adminApiKey) keyInput.value = pending.adminApiKey;
+      if (pending.contentKinds) renderKinds(pending.contentKinds);
       if (editingHandle) {
         titleEl.textContent = 'Edit Ghost blog';
         connectBtn.textContent = 'Save';

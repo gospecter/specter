@@ -181,6 +181,7 @@ describe('loadConfig / saveConfig with isolated XDG_CONFIG_HOME', () => {
       pullPublished: true,
       conflictStrategy: 'ask',
       syncMode: 'auto',
+      contentKinds: ['post'],
       vaultPath: '/v',
       watchDebounceMs: 2000,
       targets: [
@@ -192,6 +193,7 @@ describe('loadConfig / saveConfig with isolated XDG_CONFIG_HOME', () => {
           pullPublished: true,
           conflictStrategy: 'ask',
           syncMode: 'auto',
+          contentKinds: ['post', 'page'],
           adapter: { platform: 'ghost', ghostUrl: 'u1', adminApiKey: 'k1' },
         },
       ],

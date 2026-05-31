@@ -11,7 +11,7 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { AdapterConfig } from './cms/types.js';
+import { AdapterConfig, ContentKind, Platform } from './cms/types.js';
 import { effectiveRoot } from './sync/targets.js';
 import { ConflictItem, DEFAULT_SETTINGS, GhostSyncSettings } from './types.js';
 
@@ -37,6 +37,11 @@ export interface TargetConfig {
   pullPublished: boolean;
   conflictStrategy: 'ask' | 'keep_local' | 'keep_remote';
   syncMode: 'auto' | 'manual';
+  /** Which content kinds this target syncs (both directions). Opt-in: nothing
+   *  syncs unless listed. Pull lists only these kinds; push skips local files
+   *  whose `cms_kind` is not enabled. Legacy configs (no field) migrate to the
+   *  platform's base post kind on load so existing post sync is preserved. */
+  contentKinds: ContentKind[];
   /** CMS credentials. Discriminated by `platform`. */
   adapter: AdapterConfig;
 }
@@ -169,19 +174,55 @@ export async function loadConfig(): Promise<DaemonConfig | null> {
   }
 }
 
+/** The content kinds a platform can sync, in the order the UI should offer
+ *  them. The first entry is the base post kind (the conservative default for
+ *  legacy-config migration). */
+export const PLATFORM_KINDS: Record<Platform, ContentKind[]> = {
+  ghost: ['post', 'page'],
+  wordpress: ['post', 'page'],
+  shopify: ['article', 'page', 'product'],
+};
+
+/** The base post kind for a platform — what a legacy target (no explicit
+ *  `contentKinds`) migrates to so existing post sync keeps working. */
+export function basePostKind(platform: Platform): ContentKind {
+  return PLATFORM_KINDS[platform][0];
+}
+
+/** Normalize a target's `contentKinds`:
+ *  - present (incl. empty `[]`, meaning "sync nothing") → kept as-is, filtered
+ *    to kinds the platform actually supports;
+ *  - absent (legacy config) → migrated to the platform's base post kind so a
+ *    pre-existing target keeps syncing posts and never silently goes dark.
+ *  Brand-new targets are created with an explicit list by the add/connect
+ *  flows, so they never hit the legacy branch. */
+function normalizeContentKinds(target: TargetConfig): ContentKind[] {
+  const supported = PLATFORM_KINDS[target.adapter.platform] ?? ['post'];
+  if (Array.isArray(target.contentKinds)) {
+    return target.contentKinds.filter((k) => supported.includes(k));
+  }
+  return [basePostKind(target.adapter.platform)];
+}
+
 /**
  * Return a populated `targets[]`. If the config on disk has no targets
  * (every shipped v0.3.x user), synthesize a single Ghost target from the
  * legacy flat fields. Returns an empty list if neither targets nor legacy
  * Ghost credentials are present — caller decides whether that's fatal.
+ *
+ * Also backfills each target's `contentKinds` (legacy targets → base post
+ * kind) so the engine always sees an explicit per-target kind list.
  */
 function normalizeTargets(
   raw: TargetConfig[] | undefined,
   fallback: GhostSyncSettings,
 ): TargetConfig[] {
-  if (raw && raw.length > 0) return raw;
-  if (!fallback.ghostUrl || !fallback.adminApiKey) return [];
-  return [synthesizeLegacyTarget(fallback)];
+  const targets = raw && raw.length > 0 ? raw : [];
+  if (targets.length === 0) {
+    if (!fallback.ghostUrl || !fallback.adminApiKey) return [];
+    return [synthesizeLegacyTarget(fallback)];
+  }
+  return targets.map((t) => ({ ...t, contentKinds: normalizeContentKinds(t) }));
 }
 
 /** Build a single Ghost target from legacy flat settings.
@@ -195,6 +236,8 @@ export function synthesizeLegacyTarget(settings: GhostSyncSettings): TargetConfi
     pullPublished: settings.pullPublished,
     conflictStrategy: settings.conflictStrategy,
     syncMode: settings.syncMode,
+    // Legacy single-Ghost installs synced posts — preserve exactly that.
+    contentKinds: ['post'],
     adapter: {
       platform: 'ghost',
       ghostUrl: settings.ghostUrl,

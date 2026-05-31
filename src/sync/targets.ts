@@ -48,6 +48,9 @@ export function targetSyncSettings(
     pullPublished: target.pullPublished,
     conflictStrategy: target.conflictStrategy,
     syncMode: target.syncMode,
+    // Default to posts-only if a target somehow reaches the engine without a
+    // normalized kind list (loadConfig backfills, so this is belt-and-braces).
+    contentKinds: target.contentKinds ?? ['post'],
   };
 }
 

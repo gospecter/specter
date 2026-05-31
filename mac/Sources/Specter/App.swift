@@ -651,6 +651,7 @@ struct SpecterApp: App {
     @StateObject private var dashboard = DashboardController()
     @StateObject private var wordpressConnect = WordPressConnectController()
     @StateObject private var ghostConnect = GhostConnectController()
+    @StateObject private var shopifyConnect = ShopifyConnectController()
 
     init() {
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -680,7 +681,8 @@ struct SpecterApp: App {
                     // wrappers aren't safe to read until the body is mounted.
                     dashboard.configure(store: store, supervisor: supervisor,
                                         ghostConnect: ghostConnect,
-                                        wordpressConnect: wordpressConnect)
+                                        wordpressConnect: wordpressConnect,
+                                        shopifyConnect: shopifyConnect)
                     OAuthController.shared.warnIfProtocolOwnerMismatch()
                     license.refresh()
                     if ConfigStore.exists && !supervisor.isRunning {
@@ -744,7 +746,8 @@ struct SpecterApp: App {
                     // silently no-ops on `guard let store = statusStore`.
                     dashboard.configure(store: store, supervisor: supervisor,
                                         ghostConnect: ghostConnect,
-                                        wordpressConnect: wordpressConnect)
+                                        wordpressConnect: wordpressConnect,
+                                        shopifyConnect: shopifyConnect)
                     NSApplication.shared.setActivationPolicy(.regular)
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }
@@ -813,6 +816,35 @@ struct SpecterApp: App {
         .windowResizability(.contentSize)
         .commandsRemoved()
         .handlesExternalEvents(matching: ["ghost-connect"])
+
+        Window("Edit Shopify", id: "shopify-connect") {
+            ShopifyConnectView(controller: shopifyConnect) {
+                supervisor.restart()
+                dashboard.reload()
+                store.reload()
+                shopifyConnect.reset()
+                if let window = NSApplication.shared.windows.first(where: { $0.title == "Edit Shopify" }) {
+                    window.close()
+                }
+                NSApplication.shared.setActivationPolicy(.accessory)
+            } onCancel: {
+                shopifyConnect.reset()
+                if let window = NSApplication.shared.windows.first(where: { $0.title == "Edit Shopify" }) {
+                    window.close()
+                }
+                NSApplication.shared.setActivationPolicy(.accessory)
+            }
+            .onAppear {
+                NSApplication.shared.setActivationPolicy(.regular)
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
+            .onDisappear {
+                NSApplication.shared.setActivationPolicy(.accessory)
+            }
+        }
+        .windowResizability(.contentSize)
+        .commandsRemoved()
+        .handlesExternalEvents(matching: ["shopify-connect"])
 
         Window("Specter Settings", id: "settings") {
             SettingsView(controller: settings, license: license) {

@@ -13,7 +13,7 @@
  * instead of waiting on the next 5s tick.
  */
 
-import type { DashboardSnapshot, DashboardTarget } from '../preload-types.js';
+import type { ContentKind, DashboardSnapshot, DashboardTarget } from '../preload-types.js';
 
 type Platform = DashboardTarget['platform'];
 type State = DashboardTarget['state'];
@@ -23,6 +23,20 @@ const PLATFORM_LABEL: Record<Platform, string> = {
   shopify: 'Shopify',
   wordpress: 'WordPress',
 };
+
+// Pluralised human labels for the "Syncs: …" caption.
+const KIND_LABEL: Record<ContentKind, string> = {
+  post: 'posts',
+  page: 'pages',
+  article: 'articles',
+  product: 'products',
+};
+
+/** "Syncs: posts, pages" — or "Syncs: nothing" for an empty opt-in selection. */
+function kindsSummary(kinds: ContentKind[]): string {
+  if (!kinds || kinds.length === 0) return 'Syncs: nothing';
+  return `Syncs: ${kinds.map((k) => KIND_LABEL[k] ?? k).join(', ')}`;
+}
 
 // ── Section switching ─────────────────────────────────────────────────────
 
@@ -118,6 +132,7 @@ function renderCard(t: DashboardTarget): HTMLElement {
     </div>
     <div class="card-status-line ${effectiveStatus.tone}">${escapeHtml(effectiveStatus.text)}</div>
     <div class="card-summary">${escapeHtml(t.summary)}</div>
+    <div class="card-kinds">${escapeHtml(kindsSummary(t.contentKinds))}</div>
     <div class="card-actions">
       ${
         isConflict
@@ -179,10 +194,13 @@ function openCardMenu(t: DashboardTarget, anchor: HTMLElement): void {
   const menu = document.createElement('div');
   menu.className = 'card-menu';
   // Shopify is connected through the hosted OAuth funnel, not an in-app form,
-  // so its target can be removed but not edited here.
+  // so its credentials can't be edited here (Edit opens the connect window for
+  // Ghost/WordPress). Its content-kind selection IS editable in-app, though, so
+  // every platform gets a "Choose content…" item.
   const canEdit = t.platform !== 'shopify';
   menu.innerHTML = `
     ${canEdit ? '<button type="button" data-menu="edit">Edit…</button>' : ''}
+    <button type="button" data-menu="kinds">Choose content…</button>
     <button type="button" data-menu="remove" class="danger">Remove…</button>
   `;
   const rect = anchor.getBoundingClientRect();
@@ -197,8 +215,81 @@ function openCardMenu(t: DashboardTarget, anchor: HTMLElement): void {
       ev.stopPropagation();
       closeCardMenu();
       if (b.dataset.menu === 'edit') void onEditTarget(t);
+      else if (b.dataset.menu === 'kinds') void onEditKinds(t);
       else if (b.dataset.menu === 'remove') void onRemoveTarget(t);
     });
+  });
+}
+
+// ── Per-target content-kind editor ─────────────────────────────────────────
+//
+// A small checkbox popover so any target (notably Shopify, which has no connect
+// form) can change which content kinds it syncs. Pre-checked from the target's
+// current selection; an empty selection ("sync nothing") is allowed. Persists
+// via `config:set-target-content-kinds`, which restarts the watcher.
+
+const KIND_OPTION_LABEL: Record<ContentKind, string> = {
+  post: 'Posts',
+  page: 'Pages',
+  article: 'Articles',
+  product: 'Products',
+};
+
+async function onEditKinds(t: DashboardTarget): Promise<void> {
+  closeCardMenu();
+  const picker = document.createElement('div');
+  picker.className = 'card-menu kinds-popover';
+  const checks = t.availableKinds
+    .map((kind) => {
+      const checked = t.contentKinds.includes(kind) ? 'checked' : '';
+      return `<label class="kind-option"><input type="checkbox" value="${kind}" ${checked}/><span>${escapeHtml(
+        KIND_OPTION_LABEL[kind] ?? kind,
+      )}</span></label>`;
+    })
+    .join('');
+  picker.innerHTML = `
+    <div class="kinds-popover-title">Sync for ${escapeHtml(PLATFORM_LABEL[t.platform])}</div>
+    <div class="kinds-popover-help">Choose what to sync</div>
+    <div class="kinds-popover-list">${checks}</div>
+    <div class="kinds-popover-actions">
+      <button type="button" data-k="cancel" class="btn-ghost">Cancel</button>
+      <button type="button" data-k="save" class="btn-ghost">Save</button>
+    </div>
+  `;
+  picker.style.position = 'fixed';
+  picker.style.top = '80px';
+  picker.style.left = '50%';
+  picker.style.transform = 'translateX(-50%)';
+  picker.style.zIndex = '1000';
+  document.body.appendChild(picker);
+  openMenuEl = picker;
+  // Keep the popover open when interacting with it.
+  picker.addEventListener('click', (ev) => ev.stopPropagation());
+
+  picker.querySelector<HTMLButtonElement>('[data-k="cancel"]')!.addEventListener('click', () => {
+    closeCardMenu();
+  });
+  picker.querySelector<HTMLButtonElement>('[data-k="save"]')!.addEventListener('click', async () => {
+    const selected = Array.from(
+      picker.querySelectorAll<HTMLInputElement>('input[type="checkbox"]:checked'),
+    ).map((cb) => cb.value as ContentKind);
+    closeCardMenu();
+    inFlight.add(t.id);
+    setTransient(t.id, 'Saving…');
+    await refresh();
+    try {
+      const result = await window.api.config.setTargetContentKinds(t.id, selected);
+      if (!result.ok) {
+        setTransient(t.id, result.error ?? 'Failed to save', 'error');
+      } else {
+        clearTransient(t.id);
+      }
+    } catch (err) {
+      setTransient(t.id, (err as Error).message, 'error');
+    } finally {
+      inFlight.delete(t.id);
+      await refresh();
+    }
   });
 }
 
@@ -291,8 +382,10 @@ function renderTargetsTable(targets: DashboardTarget[]): void {
       <span class="tr-platform">${escapeHtml(PLATFORM_LABEL[t.platform])}</span>
       <span class="tr-url">${escapeHtml(t.siteUrl)}</span>
       <span class="tr-folder">${escapeHtml(t.summary)}</span>
+      <span class="tr-kinds">${escapeHtml(kindsSummary(t.contentKinds))}</span>
       <span class="tr-actions">
         ${canEdit ? '<button type="button" class="btn-ghost" data-row="edit">Edit</button>' : ''}
+        <button type="button" class="btn-ghost" data-row="kinds">Content</button>
         <button type="button" class="btn-ghost danger" data-row="remove">Remove</button>
       </span>
     `;
@@ -300,6 +393,7 @@ function renderTargetsTable(targets: DashboardTarget[]): void {
       b.addEventListener('click', (ev) => {
         ev.stopPropagation();
         if (b.dataset.row === 'edit') void onEditTarget(t);
+        else if (b.dataset.row === 'kinds') void onEditKinds(t);
         else if (b.dataset.row === 'remove') void onRemoveTarget(t);
       });
     });

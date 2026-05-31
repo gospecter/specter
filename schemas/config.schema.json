@@ -36,6 +36,13 @@
           ],
           "description": "How the watcher reacts to local file edits.\n- 'auto'   (default): push changes within the debounce window; periodic full sync.\n- 'manual': watcher only runs periodic pulls; pushes are user-driven via Sync Now /   Push to Ghost. Lets cautious users avoid surprise writes to their blog."
         },
+        "contentKinds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ContentKind"
+          },
+          "description": "Which content kinds this target syncs, in BOTH directions. Empty = sync nothing. Pull lists only these kinds; push skips local files whose `cms_kind` is not in this list. Nothing is enabled implicitly — a kind only syncs once the user opts into it (e.g. `['post']`, `['post','page']`, Shopify `['article','product']`)."
+        },
         "vaultPath": {
           "type": "string",
           "description": "Absolute path to the vault root."
@@ -55,6 +62,7 @@
       "required": [
         "adminApiKey",
         "conflictStrategy",
+        "contentKinds",
         "ghostUrl",
         "pullDrafts",
         "pullPublished",
@@ -65,6 +73,9 @@
         "watchDebounceMs"
       ],
       "additionalProperties": false
+    },
+    "ContentKind": {
+      "type": "string"
     },
     "TargetConfig": {
       "type": "object",
@@ -102,6 +113,13 @@
             "manual"
           ]
         },
+        "contentKinds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/ContentKind"
+          },
+          "description": "Which content kinds this target syncs (both directions). Opt-in: nothing syncs unless listed. Pull lists only these kinds; push skips local files whose `cms_kind` is not enabled. Legacy configs (no field) migrate to the platform's base post kind on load so existing post sync is preserved."
+        },
         "adapter": {
           "$ref": "#/definitions/AdapterConfig",
           "description": "CMS credentials. Discriminated by `platform`."
@@ -115,6 +133,7 @@
         "pullPublished",
         "conflictStrategy",
         "syncMode",
+        "contentKinds",
         "adapter"
       ],
       "additionalProperties": false,

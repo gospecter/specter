@@ -11,7 +11,8 @@ import { makeTmpVault, readFile, writeFile } from '../fakes/tmpVault.js';
 
 function settings(overrides: Partial<GhostSyncSettings> = {}): GhostSyncSettings {
   // Empty syncFolderPath = vault root IS the sync folder. Keeps fixtures shallow.
-  return { ...DEFAULT_SETTINGS, syncFolderPath: '', ...overrides };
+  // Posts+pages enabled so kind-aware fixtures round-trip (opt-in per target).
+  return { ...DEFAULT_SETTINGS, syncFolderPath: '', contentKinds: ['post', 'page'], ...overrides };
 }
 
 describe('SyncEngine.pull', () => {

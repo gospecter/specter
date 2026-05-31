@@ -8,7 +8,8 @@
  * Pure module: no fs, no electron. Tested via direct calls.
  */
 
-import type { AppConfig, TargetConfig, AdapterConfig } from './config-merge.js';
+import type { AppConfig, TargetConfig, AdapterConfig, ContentKind } from './config-merge.js';
+import { platformKinds, normalizeContentKinds } from './config-merge.js';
 import type { DaemonState, TargetSyncState } from './state.js';
 import { lastSyncRelative } from './state.js';
 
@@ -29,6 +30,10 @@ export interface DashboardTarget {
   summary: string;
   autoSync: boolean;
   conflictCount?: number;
+  /** Kinds this target syncs (normalized: legacy → base kind). */
+  contentKinds: ContentKind[];
+  /** All kinds this target's platform can offer (drives the Edit picker). */
+  availableKinds: ContentKind[];
 }
 
 export interface DashboardSnapshot {
@@ -103,6 +108,8 @@ function buildTarget(
     summary,
     autoSync: target.syncMode === 'auto',
     conflictCount,
+    contentKinds: normalizeContentKinds(target),
+    availableKinds: platformKinds(platform),
   };
 }
 

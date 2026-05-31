@@ -37,15 +37,24 @@ export async function pullFromGhost(
     errors: [],
   };
 
+  // Content-kind opt-in: a target only pulls the kinds the user enabled. An
+  // empty list means "sync nothing" — bail before hitting the API.
+  if (settings.contentKinds.length === 0) {
+    return result;
+  }
+
   const remotePosts = adapter.listContent
     ? await adapter.listContent({
         includeDrafts: settings.pullDrafts,
         includePublished: settings.pullPublished,
+        kinds: settings.contentKinds,
       })
-    : await adapter.listPosts({
-        includeDrafts: settings.pullDrafts,
-        includePublished: settings.pullPublished,
-      });
+    : settings.contentKinds.includes('post')
+      ? await adapter.listPosts({
+          includeDrafts: settings.pullDrafts,
+          includePublished: settings.pullPublished,
+        })
+      : [];
 
   await vault.ensureFolder(settings.syncFolderPath);
 

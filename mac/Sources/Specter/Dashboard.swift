@@ -66,6 +66,7 @@ final class DashboardController: ObservableObject {
     /// matching platform form before its window opens. Optional for previews.
     weak var ghostConnect: GhostConnectController?
     weak var wordpressConnect: WordPressConnectController?
+    weak var shopifyConnect: ShopifyConnectController?
 
     func configure(store: StatusStore, supervisor: DaemonSupervisor) {
         self.statusStore = store
@@ -76,12 +77,14 @@ final class DashboardController: ObservableObject {
         store: StatusStore,
         supervisor: DaemonSupervisor,
         ghostConnect: GhostConnectController,
-        wordpressConnect: WordPressConnectController
+        wordpressConnect: WordPressConnectController,
+        shopifyConnect: ShopifyConnectController
     ) {
         self.statusStore = store
         self.supervisor = supervisor
         self.ghostConnect = ghostConnect
         self.wordpressConnect = wordpressConnect
+        self.shopifyConnect = shopifyConnect
     }
 
     private var timer: Timer?
@@ -226,11 +229,10 @@ final class DashboardController: ObservableObject {
             wordpressConnect?.loadForEditing(target)
             return "wordpress-connect"
         case .shopify:
-            // No local edit form — re-authorize via the web flow.
-            if let url = URL(string: "https://spectersync.com/connect-shopify") {
-                NSWorkspace.shared.open(url)
-            }
-            return nil
+            // Credentials are re-authorized via the web flow, but content-kind
+            // selection (and the label) are editable in-app.
+            shopifyConnect?.loadForEditing(target)
+            return "shopify-connect"
         }
     }
 
@@ -327,7 +329,8 @@ final class DashboardController: ObservableObject {
                 summary: summary,
                 autoSync: tc.syncMode == "auto",
                 conflictCount: conflictCount,
-                label: tc.label
+                label: tc.label,
+                contentKinds: tc.contentKinds
             )
         }
     }
@@ -870,6 +873,9 @@ private struct TargetSettingsRow: View {
                 Text(target.summary)
                     .font(DS.Typography.bodySm())
                     .foregroundStyle(DS.Text.outline)
+                Text(ContentKinds.summary(target.contentKinds))
+                    .font(DS.Typography.bodySm())
+                    .foregroundStyle(target.contentKinds.isEmpty ? DS.Status.warning : DS.Text.outline)
             }
             Spacer()
             HStack(spacing: 8) {

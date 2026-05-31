@@ -10,7 +10,7 @@ import { FakeWordPressApi } from '../fakes/FakeWordPressApi.js';
 import { makeTmpVault, readFile, writeFile } from '../fakes/tmpVault.js';
 
 function settings(overrides: Partial<GhostSyncSettings> = {}): GhostSyncSettings {
-  return { ...DEFAULT_SETTINGS, syncFolderPath: '', ...overrides };
+  return { ...DEFAULT_SETTINGS, syncFolderPath: '', contentKinds: ['post', 'page'], ...overrides };
 }
 
 describe('SyncEngine with WordPress content kinds', () => {

@@ -8,7 +8,7 @@ import { FakeShopifyApi } from '../fakes/FakeShopifyApi.js';
 import { makeTmpVault, readFile, writeFile } from '../fakes/tmpVault.js';
 
 function settings(overrides: Partial<GhostSyncSettings> = {}): GhostSyncSettings {
-  return { ...DEFAULT_SETTINGS, syncFolderPath: '', ...overrides };
+  return { ...DEFAULT_SETTINGS, syncFolderPath: '', contentKinds: ['article', 'page', 'product'], ...overrides };
 }
 
 describe('SyncEngine with Shopify content kinds', () => {

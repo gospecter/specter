@@ -12,6 +12,12 @@ export interface GhostSyncSettings {
    *  - 'manual': watcher only runs periodic pulls; pushes are user-driven via Sync Now /
    *    Push to Ghost. Lets cautious users avoid surprise writes to their blog. */
   syncMode: 'auto' | 'manual';
+  /** Which content kinds this target syncs, in BOTH directions. Empty = sync
+   *  nothing. Pull lists only these kinds; push skips local files whose
+   *  `cms_kind` is not in this list. Nothing is enabled implicitly — a kind
+   *  only syncs once the user opts into it (e.g. `['post']`, `['post','page']`,
+   *  Shopify `['article','product']`). */
+  contentKinds: ContentKind[];
 }
 
 export const DEFAULT_SETTINGS: GhostSyncSettings = {
@@ -22,6 +28,9 @@ export const DEFAULT_SETTINGS: GhostSyncSettings = {
   pullPublished: true,
   conflictStrategy: 'ask',
   syncMode: 'auto',
+  // Legacy/fallback default is posts-only — preserves the long-standing core
+  // behavior for configs that predate per-target content-kind selection.
+  contentKinds: ['post'],
 };
 
 export interface GhostPost {

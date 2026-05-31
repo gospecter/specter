@@ -4,8 +4,51 @@
  * in Electron through the paths.ts import chain.
  */
 
+export type Platform = 'ghost' | 'shopify' | 'wordpress';
+
+/** Content kinds the daemon understands. Mirrors `ContentKind` in
+ *  src/cms/types.ts (the open-ended `wordpress:${string}` variant is irrelevant
+ *  to the desktop UI, which only offers the closed per-platform sets below). */
+export type ContentKind = 'post' | 'page' | 'article' | 'product';
+
+/** Content kinds each platform can sync, in the order the UI should offer them.
+ *  First entry is the base post kind (the conservative legacy-migration
+ *  default). Mirrors `PLATFORM_KINDS` in src/config.ts exactly. */
+export const PLATFORM_KINDS: Record<Platform, ContentKind[]> = {
+  ghost: ['post', 'page'],
+  wordpress: ['post', 'page'],
+  shopify: ['article', 'page', 'product'],
+};
+
+/** The kinds a platform can offer. Defensive fallback to `['post']` for an
+ *  unknown platform string. */
+export function platformKinds(platform: Platform): ContentKind[] {
+  return PLATFORM_KINDS[platform] ?? ['post'];
+}
+
+/** The base post kind for a platform — what a legacy target (no explicit
+ *  `contentKinds`) normalizes to so existing post sync keeps working. Mirrors
+ *  `basePostKind` in src/config.ts. */
+export function baseKind(platform: Platform): ContentKind {
+  return platformKinds(platform)[0];
+}
+
+/** Normalize a target's `contentKinds` for display + persistence:
+ *  - present (incl. empty `[]`, meaning "sync nothing") → kept as-is, filtered
+ *    to kinds the platform actually supports;
+ *  - absent (legacy config) → migrated to the platform's base post kind so a
+ *    pre-existing target keeps syncing posts and never silently goes dark.
+ *  Matches the daemon's `normalizeContentKinds` in src/config.ts. */
+export function normalizeContentKinds(target: TargetConfig): ContentKind[] {
+  const supported = platformKinds(target.adapter.platform);
+  if (Array.isArray(target.contentKinds)) {
+    return target.contentKinds.filter((k) => supported.includes(k));
+  }
+  return [baseKind(target.adapter.platform)];
+}
+
 export interface AdapterConfig {
-  platform: 'ghost' | 'shopify' | 'wordpress';
+  platform: Platform;
   // Ghost-specific
   ghostUrl?: string;
   adminApiKey?: string;
@@ -30,6 +73,10 @@ export interface TargetConfig {
   pullPublished: boolean;
   conflictStrategy: 'ask' | 'keep_local' | 'keep_remote';
   syncMode: 'auto' | 'manual';
+  /** Per-target opt-in: which content kinds sync (both directions). Empty array
+   *  means "sync nothing". Absent in a legacy config → normalized to the
+   *  platform's base post kind. */
+  contentKinds?: ContentKind[];
   adapter: AdapterConfig;
 }
 
@@ -62,8 +109,10 @@ export function mergeTargetsForConfig(
   legacy: AppConfig,
 ): TargetConfig[] {
   if (existing && existing.length > 0) {
-    // Non-destructive: keep the full list verbatim.
-    return existing;
+    // Non-destructive: keep the full list verbatim, but normalize each target's
+    // contentKinds so a legacy (field-less) target round-trips with its base
+    // kind made explicit — mirroring the daemon's backfill.
+    return existing.map((t) => ({ ...t, contentKinds: normalizeContentKinds(t) }));
   }
   // First-run only: derive a single Ghost target from the legacy flat fields.
   const synthesized: TargetConfig = {
@@ -74,6 +123,8 @@ export function mergeTargetsForConfig(
     pullPublished: legacy.pullPublished,
     conflictStrategy: legacy.conflictStrategy,
     syncMode: legacy.syncMode,
+    // Legacy single-Ghost first run → base post kind, matching the daemon.
+    contentKinds: [baseKind('ghost')],
     adapter: {
       platform: 'ghost',
       ghostUrl: legacy.ghostUrl,

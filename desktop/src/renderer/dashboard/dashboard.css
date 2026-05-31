@@ -330,6 +330,12 @@ body.ds { margin: 0; height: 100%; }
   color: var(--ds-text-muted);
 }
 
+.card-kinds {
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-body-md);
+  color: var(--ds-text-muted);
+}
+
 .card-actions {
   display: flex;
   align-items: center;
@@ -390,6 +396,52 @@ body.ds { margin: 0; height: 100%; }
 .btn-ghost.danger { color: var(--ds-error); }
 .card-menu button.danger:hover {
   background: color-mix(in srgb, var(--ds-error) 12%, transparent);
+}
+
+/* ── Content-kind popover (per-target "Choose content…") ───────────────────── */
+
+.kinds-popover {
+  min-width: 220px;
+  gap: 4px;
+  padding: 12px;
+}
+
+.kinds-popover-title {
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-headline-sm);
+  font-weight: var(--ds-fw-headline-sm);
+  color: var(--ds-text-primary);
+}
+
+.kinds-popover-help {
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-body-md);
+  color: var(--ds-text-muted);
+  margin-bottom: 6px;
+}
+
+.kinds-popover-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.kinds-popover .kind-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-body-md);
+  color: var(--ds-text-primary);
+  padding: 0;
+}
+
+.kinds-popover-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 /* ── Settings pane: Targets list (spec S6) ─────────────────────────────────── */

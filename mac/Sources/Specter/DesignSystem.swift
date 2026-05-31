@@ -173,6 +173,52 @@ struct DSPrimaryButtonStyle: ButtonStyle {
     }
 }
 
+/// Content-kind picker — a column of toggles, one per kind the platform
+/// supports. Opt-in: nothing is pre-checked for a new connection (the caller
+/// seeds `selected` from the target's current kinds when editing). Zero
+/// selected is allowed (the target then syncs nothing).
+///
+/// Shared by the Ghost / WordPress connect forms and the per-card Edit sheet
+/// so all three platforms get an identical selector.
+struct ContentKindSelector: View {
+    let platform: Platform
+    @Binding var selected: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(ContentKinds.available(for: platform), id: \.self) { kind in
+                Toggle(isOn: binding(for: kind)) {
+                    Text(label(for: kind))
+                }
+                .toggleStyle(.checkbox)
+            }
+            if selected.isEmpty {
+                Label("Nothing selected — this connection won't sync anything.",
+                      systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func binding(for kind: String) -> Binding<Bool> {
+        Binding(
+            get: { selected.contains(kind) },
+            set: { isOn in
+                if isOn {
+                    if !selected.contains(kind) { selected.append(kind) }
+                } else {
+                    selected.removeAll { $0 == kind }
+                }
+            }
+        )
+    }
+
+    private func label(for kind: String) -> String {
+        kind.prefix(1).uppercased() + kind.dropFirst() + "s"
+    }
+}
+
 /// 8px status dot — success / warning / error.
 struct DSStatusDot: View {
     enum Tone { case success, warning, error, idle }

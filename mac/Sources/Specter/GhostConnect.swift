@@ -13,6 +13,9 @@ final class GhostConnectController: ObservableObject {
     @Published var label: String = ""
     @Published var ghostUrl: String = ""
     @Published var adminApiKey: String = ""
+    /// Content kinds the user has ticked to sync. Opt-in: empty for a new
+    /// connection (nothing pre-checked); pre-filled from the target when editing.
+    @Published var contentKinds: [String] = []
     @Published var testResult: OnboardingController.TestResult = .untested
     @Published var isTesting = false
     @Published var saveError: String?
@@ -38,6 +41,7 @@ final class GhostConnectController: ObservableObject {
         label = ""
         ghostUrl = ""
         adminApiKey = ""
+        contentKinds = []   // new connection: nothing pre-checked (opt-in).
         testResult = .untested
         saveError = nil
         isTesting = false
@@ -51,6 +55,7 @@ final class GhostConnectController: ObservableObject {
         label = target.label
         ghostUrl = g.ghostUrl
         adminApiKey = g.adminApiKey
+        contentKinds = target.contentKinds   // edit: pre-fill from current.
         testResult = .untested
         saveError = nil
         isTesting = false
@@ -77,6 +82,7 @@ final class GhostConnectController: ObservableObject {
             try ConfigStore.upsertGhostTarget(
                 ghostUrl: url,
                 adminApiKey: key,
+                contentKinds: contentKinds,
                 label: label,
                 editingHandle: editingHandle
             )
@@ -136,6 +142,17 @@ struct GhostConnectView: View {
 
                         testResultView
                     }
+                }
+
+                Section {
+                    ContentKindSelector(platform: .ghost,
+                                        selected: $controller.contentKinds)
+                } header: {
+                    Text("What to sync")
+                } footer: {
+                    Text("Choose what to sync. Both directions — only ticked kinds pull from and push to Ghost.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)

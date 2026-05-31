@@ -35,8 +35,10 @@ import {
   readConfig,
   writeConfig,
   AppConfig,
+  ContentKind,
   configExists,
   setTargetSyncMode,
+  setTargetContentKinds,
   upsertWordPressTarget,
   upsertGhostTarget,
   removeTarget,
@@ -99,13 +101,21 @@ export function registerIpcHandlers(sup: DaemonSupervisor): void {
 
   handleTrusted(
     'ghost:connect',
-    (_event, payload: { ghostUrl: string; adminApiKey: string; label?: string }) => {
-      const { ghostUrl, adminApiKey, label } = payload ?? ({} as typeof payload);
+    (
+      _event,
+      payload: {
+        ghostUrl: string;
+        adminApiKey: string;
+        label?: string;
+        contentKinds?: ContentKind[];
+      },
+    ) => {
+      const { ghostUrl, adminApiKey, label, contentKinds } = payload ?? ({} as typeof payload);
       if (!ghostUrl || !adminApiKey) {
         return { ok: false, error: 'Missing Ghost URL or Admin API key.' };
       }
       try {
-        upsertGhostTarget(ghostUrl, adminApiKey, label);
+        upsertGhostTarget(ghostUrl, adminApiKey, label, contentKinds);
         if (supervisor && supervisor.isRunning) {
           try { supervisor.restart(); } catch { /* best-effort */ }
         }
@@ -146,14 +156,21 @@ export function registerIpcHandlers(sup: DaemonSupervisor): void {
     'wordpress:connect',
     (
       _event,
-      payload: { siteUrl: string; username: string; appPassword: string; label?: string },
+      payload: {
+        siteUrl: string;
+        username: string;
+        appPassword: string;
+        label?: string;
+        contentKinds?: ContentKind[];
+      },
     ) => {
-      const { siteUrl, username, appPassword, label } = payload ?? ({} as typeof payload);
+      const { siteUrl, username, appPassword, label, contentKinds } =
+        payload ?? ({} as typeof payload);
       if (!siteUrl || !username || !appPassword) {
         return { ok: false, error: 'Missing site URL, username, or application password.' };
       }
       try {
-        upsertWordPressTarget(siteUrl, username, appPassword, label);
+        upsertWordPressTarget(siteUrl, username, appPassword, label, contentKinds);
         if (supervisor && supervisor.isRunning) {
           try { supervisor.restart(); } catch { /* best-effort */ }
         }
@@ -354,6 +371,7 @@ export function registerIpcHandlers(sup: DaemonSupervisor): void {
         platform: 'ghost',
         handle,
         label: target.label,
+        contentKinds: target.contentKinds,
         ghostUrl: target.adapter.ghostUrl,
         adminApiKey: target.adapter.adminApiKey,
       };
@@ -366,6 +384,7 @@ export function registerIpcHandlers(sup: DaemonSupervisor): void {
         platform: 'wordpress',
         handle,
         label: target.label,
+        contentKinds: target.contentKinds,
         siteUrl: target.adapter.siteUrl,
         username: target.adapter.username,
         appPassword: target.adapter.appPassword,
@@ -374,6 +393,9 @@ export function registerIpcHandlers(sup: DaemonSupervisor): void {
       openWindow('wordpress-connect');
       return { ok: true };
     }
+    // Shopify has no connect form (hosted OAuth). Its credentials can't be
+    // edited in-app, but its content-kind selection can — the dashboard edits
+    // that directly via `config:set-target-content-kinds`.
     return {
       ok: false,
       error: 'Shopify connections are managed through the hosted connect flow.',
@@ -406,6 +428,28 @@ export function registerIpcHandlers(sup: DaemonSupervisor): void {
         return { ok: false, error: 'Invalid payload.' };
       }
       const result = setTargetSyncMode(handle, mode);
+      if (result.ok && supervisor && supervisor.isRunning) {
+        try { supervisor.restart(); } catch { /* best-effort */ }
+      }
+      return result;
+    },
+  );
+
+  // ── Persist a target's content-kind selection ──────────────────────────────
+  //
+  // Used by the dashboard to change which content kinds a target syncs without
+  // a connect form. The primary in-app surface for Shopify (no connect window),
+  // and a direct path for any platform. Filters to the platform's supported
+  // kinds in config.ts; an empty array is a valid "sync nothing" choice.
+
+  handleTrusted(
+    'config:set-target-content-kinds',
+    (_event, payload: { handle: string; contentKinds: ContentKind[] }) => {
+      const { handle, contentKinds } = payload ?? ({} as typeof payload);
+      if (!handle || !Array.isArray(contentKinds)) {
+        return { ok: false, error: 'Invalid payload.' };
+      }
+      const result = setTargetContentKinds(handle, contentKinds);
       if (result.ok && supervisor && supervisor.isRunning) {
         try { supervisor.restart(); } catch { /* best-effort */ }
       }

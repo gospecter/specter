@@ -8,6 +8,8 @@
  * Update both files in lockstep when the API surface changes.
  */
 
+export type ContentKind = 'post' | 'page' | 'article' | 'product';
+
 export interface AppConfig {
   ghostUrl: string;
   adminApiKey: string;
@@ -73,6 +75,8 @@ export interface DashboardTarget {
   summary: string;
   autoSync: boolean;
   conflictCount?: number;
+  contentKinds: ContentKind[];
+  availableKinds: ContentKind[];
 }
 
 export interface DashboardSnapshot {
@@ -83,6 +87,7 @@ export interface PendingConnect {
   platform: 'ghost' | 'wordpress';
   handle?: string;
   label?: string;
+  contentKinds?: ContentKind[];
   ghostUrl?: string;
   adminApiKey?: string;
   siteUrl?: string;
@@ -101,6 +106,10 @@ export interface SpecterApi {
     ) => Promise<ApiResult>;
     removeTarget: (handle: string) => Promise<ApiResult>;
     editTarget: (handle: string) => Promise<ApiResult>;
+    setTargetContentKinds: (
+      handle: string,
+      contentKinds: ContentKind[],
+    ) => Promise<ApiResult>;
   };
   ghost: {
     test: (url: string, key: string) => Promise<ApiResult>;
@@ -108,6 +117,7 @@ export interface SpecterApi {
       ghostUrl: string,
       adminApiKey: string,
       label?: string,
+      contentKinds?: ContentKind[],
     ) => Promise<ApiResult>;
   };
   connect: {
@@ -124,6 +134,7 @@ export interface SpecterApi {
       username: string,
       appPassword: string,
       label?: string,
+      contentKinds?: ContentKind[],
     ) => Promise<ApiResult>;
   };
   daemon: {

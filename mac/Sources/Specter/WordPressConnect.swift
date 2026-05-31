@@ -13,6 +13,9 @@ final class WordPressConnectController: ObservableObject {
     @Published var siteUrl: String = ""
     @Published var username: String = ""
     @Published var appPassword: String = ""
+    /// Content kinds the user has ticked to sync. Opt-in: empty for a new
+    /// connection (nothing pre-checked); pre-filled from the target when editing.
+    @Published var contentKinds: [String] = []
     @Published var testResult: OnboardingController.TestResult = .untested
     @Published var isTesting = false
     @Published var saveError: String?
@@ -40,6 +43,7 @@ final class WordPressConnectController: ObservableObject {
         siteUrl = ""
         username = ""
         appPassword = ""
+        contentKinds = []   // new connection: nothing pre-checked (opt-in).
         testResult = .untested
         saveError = nil
         isTesting = false
@@ -54,6 +58,7 @@ final class WordPressConnectController: ObservableObject {
         siteUrl = w.siteUrl
         username = w.username
         appPassword = w.appPassword
+        contentKinds = target.contentKinds   // edit: pre-fill from current.
         testResult = .untested
         saveError = nil
         isTesting = false
@@ -90,6 +95,7 @@ final class WordPressConnectController: ObservableObject {
                 siteUrl: url,
                 username: user,
                 appPassword: pw,
+                contentKinds: contentKinds,
                 label: label,
                 editingHandle: editingHandle
             )
@@ -162,6 +168,17 @@ struct WordPressConnectView: View {
 
                         testResultView
                     }
+                }
+
+                Section {
+                    ContentKindSelector(platform: .wordpress,
+                                        selected: $controller.contentKinds)
+                } header: {
+                    Text("What to sync")
+                } footer: {
+                    Text("Choose what to sync. Both directions — only ticked kinds pull from and push to WordPress.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
             .formStyle(.grouped)

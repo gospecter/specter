@@ -13,7 +13,7 @@ import {
   saveConfig,
   upsertTarget,
 } from '../config.js';
-import { Ask, promptAdapter, promptPlatform } from './target-prompt.js';
+import { Ask, promptAdapter, promptContentKinds, promptPlatform } from './target-prompt.js';
 
 interface InitOptions {
   fromObsidian?: string;
@@ -116,6 +116,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     const pullPublished =
       primary?.pullPublished ?? existing?.pullPublished ?? imported?.pullPublished ?? true;
     const syncMode = primary?.syncMode ?? existing?.syncMode ?? DEFAULT_SETTINGS.syncMode;
+    const contentKinds = await promptContentKinds(ask, platform, primary?.contentKinds ?? []);
 
     // Reuse the primary target's handle when editing; otherwise derive a
     // unique, host-based handle so a future `target add` of the same platform
@@ -133,6 +134,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
       pullPublished,
       conflictStrategy,
       syncMode,
+      contentKinds,
       adapter,
     };
 
@@ -146,6 +148,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
       pullPublished,
       conflictStrategy,
       syncMode,
+      contentKinds,
     };
 
     const config: DaemonConfig = {
