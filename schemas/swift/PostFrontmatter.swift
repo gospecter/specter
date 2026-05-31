@@ -17,6 +17,8 @@ import Foundation
 /// current location.
 // MARK: - PostFrontmatter
 public struct PostFrontmatter: Equatable {
+    /// Canonical v2 resource kind. Omitted/null means legacy `post`.
+    public let cmsKind: String?
     public let excerpt, featureImage: String?
     public let ghostID, ghostSlug: String?
     public let ghostStatus: Status?
@@ -25,7 +27,8 @@ public struct PostFrontmatter: Equatable {
     public let tags: [String]
     public let cms: CMS?
 
-    public init(excerpt: String?, featureImage: String?, ghostID: String?, ghostSlug: String?, ghostStatus: Status?, ghostUpdatedAt: String?, localUpdatedAt: String?, tags: [String], cms: CMS?) {
+    public init(cmsKind: String?, excerpt: String?, featureImage: String?, ghostID: String?, ghostSlug: String?, ghostStatus: Status?, ghostUpdatedAt: String?, localUpdatedAt: String?, tags: [String], cms: CMS?) {
+        self.cmsKind = cmsKind
         self.excerpt = excerpt
         self.featureImage = featureImage
         self.ghostID = ghostID

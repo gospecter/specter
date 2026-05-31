@@ -20,6 +20,17 @@
     "PostFrontmatter": {
       "type": "object",
       "properties": {
+        "cms_kind": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ContentKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Canonical v2 resource kind. Omitted/null means legacy `post`."
+        },
         "ghost_id": {
           "type": [
             "string",
@@ -82,6 +93,9 @@
         "excerpt"
       ],
       "additionalProperties": false
+    },
+    "ContentKind": {
+      "type": "string"
     },
     "PostFrontmatterV2": {
       "type": "object",

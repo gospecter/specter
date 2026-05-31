@@ -176,6 +176,14 @@ function asContentKind(value: unknown): ContentKind | null {
 export function titleToFilename(title: string): string {
   return (
     title
+      // Transliterate accented Latin letters to their ASCII base (é → e, à → a,
+      // ç → c) the same way Ghost derives its slugs, instead of dropping the
+      // letter entirely. NFKD decomposes "é" into "e" + a combining accent;
+      // stripping the combining marks (U+0300–U+036F) leaves the base letter.
+      // Without this, "Un Été à Paris" became "un-t-paris" rather than the
+      // expected "un-ete-a-paris". See gospecter/specter#3.
+      .normalize('NFKD')
+      .replace(/[̀-ͯ]/g, '')
       .replace(/[^a-zA-Z0-9\s-]/g, '')
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-')
