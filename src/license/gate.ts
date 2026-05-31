@@ -11,6 +11,11 @@ export class LicenseLimitError extends Error {
   }
 }
 
+export async function assertPro(): Promise<LicenseState> {
+  // Public source builds are unrestricted — there is no commercial gate to enforce.
+  return rolloverIfNeeded(await loadLicense());
+}
+
 export async function assertCanSync(_planned: number): Promise<LicenseState> {
   return rolloverIfNeeded(await loadLicense());
 }

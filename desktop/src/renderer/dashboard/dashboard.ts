@@ -134,7 +134,7 @@ function renderCard(t: DashboardTarget): HTMLElement {
   `;
 
   card.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (ev) => {
       const action = btn.dataset.action!;
       if (action === 'auto') {
         void onToggleAuto(t);
@@ -144,14 +144,94 @@ function renderCard(t: DashboardTarget): HTMLElement {
         void onRunCommand(t, action);
         return;
       }
-      // `resolve` and `more` are out of scope for this slice — they remain
-      // visual-only until the multi-platform conflict view ships (spec S5).
-      // eslint-disable-next-line no-console
-      console.log(`[dashboard] ${action} ${t.id}`);
+      if (action === 'resolve') {
+        // The Preview (dry-run) window is the conflict surface today (spec S5
+        // ships the dedicated resolver later). Route there scoped to this target.
+        void onRunCommand(t, 'dry-run');
+        return;
+      }
+      if (action === 'more') {
+        ev.stopPropagation();
+        openCardMenu(t, btn);
+        return;
+      }
     });
   });
 
   return card;
+}
+
+// ── Per-card ⋯ menu (Edit / Remove) ────────────────────────────────────────
+
+let openMenuEl: HTMLElement | null = null;
+
+function closeCardMenu(): void {
+  if (openMenuEl) {
+    openMenuEl.remove();
+    openMenuEl = null;
+  }
+}
+
+document.addEventListener('click', closeCardMenu);
+
+function openCardMenu(t: DashboardTarget, anchor: HTMLElement): void {
+  closeCardMenu();
+  const menu = document.createElement('div');
+  menu.className = 'card-menu';
+  // Shopify is connected through the hosted OAuth funnel, not an in-app form,
+  // so its target can be removed but not edited here.
+  const canEdit = t.platform !== 'shopify';
+  menu.innerHTML = `
+    ${canEdit ? '<button type="button" data-menu="edit">Edit…</button>' : ''}
+    <button type="button" data-menu="remove" class="danger">Remove…</button>
+  `;
+  const rect = anchor.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.style.left = `${Math.max(8, rect.right - 160)}px`;
+  document.body.appendChild(menu);
+  openMenuEl = menu;
+
+  menu.querySelectorAll<HTMLButtonElement>('[data-menu]').forEach((b) => {
+    b.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      closeCardMenu();
+      if (b.dataset.menu === 'edit') void onEditTarget(t);
+      else if (b.dataset.menu === 'remove') void onRemoveTarget(t);
+    });
+  });
+}
+
+async function onEditTarget(t: DashboardTarget): Promise<void> {
+  const result = await window.api.config.editTarget(t.id);
+  if (!result.ok) {
+    setTransient(t.id, result.error ?? 'Cannot edit this target', 'error');
+    await refresh();
+  }
+}
+
+async function onRemoveTarget(t: DashboardTarget): Promise<void> {
+  const ok = window.confirm(
+    `Remove "${PLATFORM_LABEL[t.platform]} · ${t.siteUrl}"? Local files in its sync folder are kept; only the connection is removed.`,
+  );
+  if (!ok) return;
+  if (inFlight.has(t.id)) return;
+  inFlight.add(t.id);
+  setTransient(t.id, 'Removing…');
+  await refresh();
+  try {
+    const result = await window.api.config.removeTarget(t.id);
+    if (!result.ok) {
+      setTransient(t.id, result.error ?? 'Failed to remove', 'error');
+    } else {
+      clearTransient(t.id);
+    }
+  } catch (err) {
+    setTransient(t.id, (err as Error).message, 'error');
+  } finally {
+    inFlight.delete(t.id);
+    await refresh();
+  }
 }
 
 function renderEmpty(): HTMLElement {
@@ -167,6 +247,7 @@ function renderEmpty(): HTMLElement {
 // ── Live data: poll dashboard:fetch every 5s ──────────────────────────────
 
 const list = document.getElementById('card-list')!;
+const targetsTable = document.getElementById('targets-table');
 
 async function refresh(): Promise<void> {
   let snapshot: DashboardSnapshot;
@@ -180,9 +261,50 @@ async function refresh(): Promise<void> {
   list.innerHTML = '';
   if (snapshot.targets.length === 0) {
     list.appendChild(renderEmpty());
+  } else {
+    snapshot.targets.forEach((t) => list.appendChild(renderCard(t)));
+  }
+  renderTargetsTable(snapshot.targets);
+}
+
+// ── Settings pane: Targets list (spec S6) ──────────────────────────────────
+//
+// A flat list of every connection with Edit/Remove, so target management is
+// reachable outside the per-card ⋯ menu. Shares the IPC paths the cards use.
+
+function renderTargetsTable(targets: DashboardTarget[]): void {
+  if (!targetsTable) return;
+  targetsTable.innerHTML = '';
+  if (targets.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'ds-muted';
+    empty.textContent = 'No connected sites yet.';
+    targetsTable.appendChild(empty);
     return;
   }
-  snapshot.targets.forEach((t) => list.appendChild(renderCard(t)));
+  targets.forEach((t) => {
+    const row = document.createElement('div');
+    row.className = 'target-row';
+    const canEdit = t.platform !== 'shopify';
+    row.innerHTML = `
+      <span class="status-dot ${dotClass(t.state)}"></span>
+      <span class="tr-platform">${escapeHtml(PLATFORM_LABEL[t.platform])}</span>
+      <span class="tr-url">${escapeHtml(t.siteUrl)}</span>
+      <span class="tr-folder">${escapeHtml(t.summary)}</span>
+      <span class="tr-actions">
+        ${canEdit ? '<button type="button" class="btn-ghost" data-row="edit">Edit</button>' : ''}
+        <button type="button" class="btn-ghost danger" data-row="remove">Remove</button>
+      </span>
+    `;
+    row.querySelectorAll<HTMLButtonElement>('[data-row]').forEach((b) => {
+      b.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (b.dataset.row === 'edit') void onEditTarget(t);
+        else if (b.dataset.row === 'remove') void onRemoveTarget(t);
+      });
+    });
+    targetsTable.appendChild(row);
+  });
 }
 
 // ── Action handlers ───────────────────────────────────────────────────────
@@ -294,7 +416,10 @@ if (addBtn && addMenu) {
       addMenu.classList.add('hidden');
       const target = btn.dataset.add;
       if (target === 'ghost') {
-        await window.api.windows.open('settings-or-onboarding');
+        // Multi-target: open the dedicated Ghost connect window so each blog
+        // gets its own handle + folder, instead of the legacy single-Ghost
+        // Settings/onboarding that overwrote targets[0].
+        await window.api.windows.open('ghost-connect');
       } else if (target === 'shopify') {
         await window.api.shell.openExternal('https://spectersync.com/connect-shopify');
       } else if (target === 'wordpress') {

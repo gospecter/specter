@@ -17,7 +17,7 @@ export interface PushResult {
   updated: string[];
   skipped: string[];
   /** Posts that would have been uploaded but were held back because the
-   *  free-tier monthly cap was reached during this run. Empty on Pro. */
+   *  upload cap was reached during this run. Empty on Pro. */
   deferred: string[];
   conflicts: ConflictItem[];
   errors: { file: VaultFile; error: string }[];
@@ -93,7 +93,7 @@ async function processLocalPost(
     return;
   }
 
-  // Free-tier cap: once we've hit `maxUploads` real uploads this run, defer
+  // Upload cap: once we've hit `maxUploads` real uploads this run, defer
   // any further would-be uploads instead of refusing the whole batch.
   if (maxUploads !== undefined) {
     const used = result.created.length + result.updated.length;

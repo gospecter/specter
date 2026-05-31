@@ -4,41 +4,32 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';" />
-  <title>Add WordPress site</title>
+  <title>Add Ghost blog</title>
   <link rel="stylesheet" href="../common.css" />
-  <link rel="stylesheet" href="wordpress-connect.css" />
+  <link rel="stylesheet" href="ghost-connect.css" />
 </head>
 <body>
-  <main class="wp-connect">
+  <main class="gh-connect">
     <header>
-      <h1>Add a WordPress site</h1>
-      <p class="subtitle">Specter signs in with WordPress Application Passwords. No plugin required.</p>
+      <h1 id="gh-title">Add a Ghost blog</h1>
+      <p class="subtitle">Connect any number of Ghost blogs. Each gets its own sync folder.</p>
     </header>
 
     <section class="form">
       <label class="field">
         <span class="label">Label</span>
-        <input id="wp-label" type="text" placeholder="My site" autocomplete="off" />
+        <input id="gh-label" type="text" placeholder="My blog" autocomplete="off" />
       </label>
 
       <label class="field">
-        <span class="label">Site URL</span>
-        <input id="wp-site-url" type="url" placeholder="https://example.com" autocomplete="off" />
+        <span class="label">Ghost URL</span>
+        <input id="gh-url" type="url" placeholder="https://blog.example.com" autocomplete="off" />
       </label>
 
       <label class="field">
-        <span class="label">Username</span>
-        <input id="wp-username" type="text" autocomplete="off" />
+        <span class="label">Admin API Key</span>
+        <input id="gh-key" type="password" placeholder="xxxxxxxxxxxx:xxxxxxxx…" autocomplete="off" />
       </label>
-
-      <label class="field">
-        <span class="label">Application Password</span>
-        <input id="wp-app-password" type="password" placeholder="xxxx xxxx xxxx xxxx xxxx xxxx" autocomplete="off" />
-      </label>
-
-      <p class="help">
-        <a id="wp-help-link" href="#">How to create an Application Password</a>
-      </p>
 
       <div class="test-row">
         <button id="btn-test" type="button" disabled>Test Connection</button>
@@ -55,6 +46,6 @@
     </footer>
   </main>
 
-  <script type="module" src="wordpress-connect.js"></script>
+  <script type="module" src="ghost-connect.js"></script>
 </body>
 </html>

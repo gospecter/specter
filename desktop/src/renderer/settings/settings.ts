@@ -274,16 +274,12 @@ function renderLicenseSection(status: LicenseStatus): void {
       }
     });
   } else {
-    // Free tier
-    const used = status.syncCount ?? 0;
-    const limit = status.freeLimit ?? 200;
-    const atLimit = used >= limit;
     licenseSection.innerHTML = `
       <div class="license-free">
         <div class="row row-gap-sm">
-          <span class="caption ${atLimit ? 'status-error' : 'status-muted'}">${used} of ${limit} uploads used this month</span>
+          <span class="caption status-muted">Activate Specter Pro to upload changes.</span>
           <div class="spacer"></div>
-          <a href="https://spectersync.com/#buy" target="_blank" class="btn btn-primary" style="text-decoration:none;">Buy Specter Pro — $49</a>
+          <a href="https://spectersync.com/#buy" target="_blank" class="btn btn-primary" style="text-decoration:none;">Subscribe — $99/year</a>
         </div>
         <div>
           <div class="caption" style="margin-bottom:6px;">Have a license key? Paste it here:</div>

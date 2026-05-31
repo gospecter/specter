@@ -3,7 +3,17 @@ import path from 'node:path';
 import readline from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { DEFAULT_SETTINGS } from '../types.js';
-import { DaemonConfig, configPath, loadConfig, saveConfig, synthesizeLegacyTarget } from '../config.js';
+import {
+  DaemonConfig,
+  TargetConfig,
+  configPath,
+  defaultHandleBase,
+  ensureUniqueHandle,
+  loadConfig,
+  saveConfig,
+  upsertTarget,
+} from '../config.js';
+import { Ask, promptAdapter, promptPlatform } from './target-prompt.js';
 
 interface InitOptions {
   fromObsidian?: string;
@@ -29,7 +39,7 @@ async function readObsidianData(filePath: string): Promise<ObsidianData | null> 
   }
 }
 
-function defaultVaultGuess(syncFolder: string): string {
+function defaultVaultGuess(_syncFolder: string): string {
   // The user's existing setup stores the sync folder under the Obsidian vault
   // at /Users/<name>/Documents/OS. We don't hardcode that here — we just pick
   // it as the most likely root and let the user override.
@@ -56,73 +66,36 @@ export async function initCommand(options: InitOptions): Promise<void> {
     }
   }
 
+  // init edits the PRIMARY target (targets[0]) when one exists, leaving any
+  // additional targets untouched. To add more connections, use `target add`.
+  const primary: TargetConfig | undefined = existing?.targets?.[0];
+
   const rl = readline.createInterface({ input: stdin, output: stdout });
-  const ask = async (q: string, fallback: string): Promise<string> => {
+  const ask: Ask = async (q, fallback) => {
     const suffix = fallback ? ` [${fallback}]` : '';
     const answer = (await rl.question(`${q}${suffix}: `)).trim();
     return answer || fallback;
   };
 
   try {
-    const platformInput = await ask(
-      'Platform to configure (ghost | wordpress | shopify)',
-      existing?.targets?.[0]?.adapter?.platform || 'ghost',
+    const platform = await promptPlatform(ask, primary?.adapter.platform ?? 'ghost');
+    let adapter = await promptAdapter(
+      ask,
+      platform,
+      primary?.adapter.platform === platform ? primary.adapter : undefined,
     );
-    const platform = platformInput.toLowerCase() as 'ghost' | 'wordpress' | 'shopify';
-    if (!['ghost', 'wordpress', 'shopify'].includes(platform)) {
-      console.error(`Error: Unknown platform '${platform}'. Supported platforms: ghost, wordpress, shopify`);
-      process.exit(1);
-    }
-
-    let adapter: any;
-    if (platform === 'ghost') {
-      const ghostUrl = await ask(
-        'Ghost URL (e.g. https://yourblog.ghost.io)',
-        existing?.ghostUrl || imported?.ghostUrl || '',
-      );
-      const adminApiKey = await ask(
-        'Admin API Key (id:secret)',
-        existing?.adminApiKey || imported?.adminApiKey || '',
-      );
-      adapter = { platform: 'ghost', ghostUrl, adminApiKey };
-    } else if (platform === 'wordpress') {
-      const siteUrl = await ask(
-        'WordPress site URL (e.g. https://yourblog.com)',
-        (existing?.targets?.[0]?.adapter?.platform === 'wordpress' && (existing.targets[0].adapter as any).siteUrl) || '',
-      );
-      const username = await ask(
-        'WordPress username',
-        (existing?.targets?.[0]?.adapter?.platform === 'wordpress' && (existing.targets[0].adapter as any).username) || '',
-      );
-      const appPasswordRaw = await ask(
-        'WordPress Application Password (24 chars)',
-        (existing?.targets?.[0]?.adapter?.platform === 'wordpress' && (existing.targets[0].adapter as any).appPassword) || '',
-      );
+    // For a brand-new Ghost target, seed defaults from the imported Obsidian
+    // data when the user left the fields blank.
+    if (
+      adapter.platform === 'ghost' &&
+      !primary &&
+      imported &&
+      (!adapter.ghostUrl || !adapter.adminApiKey)
+    ) {
       adapter = {
-        platform: 'wordpress',
-        siteUrl,
-        username,
-        appPassword: appPasswordRaw.replace(/\s+/g, ''),
-      };
-    } else {
-      // shopify
-      const shop = await ask(
-        'Shopify shop domain (e.g. your-store.myshopify.com)',
-        (existing?.targets?.[0]?.adapter?.platform === 'shopify' && (existing.targets[0].adapter as any).shop) || '',
-      );
-      const accessToken = await ask(
-        'Shopify Admin Access Token (shpat_...)',
-        (existing?.targets?.[0]?.adapter?.platform === 'shopify' && (existing.targets[0].adapter as any).accessToken) || '',
-      );
-      const apiVersion = await ask(
-        'Shopify API Version (e.g. 2024-04)',
-        (existing?.targets?.[0]?.adapter?.platform === 'shopify' && (existing.targets[0].adapter as any).apiVersion) || '2024-04',
-      );
-      adapter = {
-        platform: 'shopify',
-        shop,
-        accessToken,
-        apiVersion,
+        platform: 'ghost',
+        ghostUrl: adapter.ghostUrl || imported.ghostUrl || '',
+        adminApiKey: adapter.adminApiKey || imported.adminApiKey || '',
       };
     }
 
@@ -132,44 +105,63 @@ export async function initCommand(options: InitOptions): Promise<void> {
     );
     const syncFolderPath = await ask(
       'Sync folder (relative to vault root)',
-      existing?.syncFolderPath || imported?.syncFolderPath || DEFAULT_SETTINGS.syncFolderPath,
+      primary?.syncFolderPath || existing?.syncFolderPath || imported?.syncFolderPath || DEFAULT_SETTINGS.syncFolderPath,
     );
     const conflictStrategy = (await ask(
       'Conflict strategy (ask | keep_local | keep_remote)',
-      existing?.conflictStrategy || imported?.conflictStrategy || 'ask',
+      primary?.conflictStrategy || existing?.conflictStrategy || imported?.conflictStrategy || 'ask',
     )) as DaemonConfig['conflictStrategy'];
 
-    const baseSettings = {
-      ghostUrl: platform === 'ghost' ? adapter.ghostUrl : '',
-      adminApiKey: platform === 'ghost' ? adapter.adminApiKey : '',
+    const pullDrafts = primary?.pullDrafts ?? existing?.pullDrafts ?? imported?.pullDrafts ?? true;
+    const pullPublished =
+      primary?.pullPublished ?? existing?.pullPublished ?? imported?.pullPublished ?? true;
+    const syncMode = primary?.syncMode ?? existing?.syncMode ?? DEFAULT_SETTINGS.syncMode;
+
+    // Reuse the primary target's handle when editing; otherwise derive a
+    // unique, host-based handle so a future `target add` of the same platform
+    // never collides.
+    const existingTargets = existing?.targets ?? [];
+    const handle =
+      primary?.handle ??
+      ensureUniqueHandle(defaultHandleBase(adapter), existingTargets.map((t) => t.handle));
+
+    const target: TargetConfig = {
+      handle,
+      label: primary?.label || platform.charAt(0).toUpperCase() + platform.slice(1),
       syncFolderPath,
-      pullDrafts: existing?.pullDrafts ?? imported?.pullDrafts ?? true,
-      pullPublished: existing?.pullPublished ?? imported?.pullPublished ?? true,
+      pullDrafts,
+      pullPublished,
       conflictStrategy,
-      syncMode: existing?.syncMode ?? DEFAULT_SETTINGS.syncMode,
+      syncMode,
+      adapter,
     };
 
-    const target: any = {
-      handle: platform,
-      label: platform.charAt(0).toUpperCase() + platform.slice(1),
+    const baseSettings = {
+      // Legacy flat fields kept for one downgrade window; only meaningful for a
+      // single Ghost primary target.
+      ghostUrl: adapter.platform === 'ghost' ? adapter.ghostUrl : '',
+      adminApiKey: adapter.platform === 'ghost' ? adapter.adminApiKey : '',
       syncFolderPath,
-      pullDrafts: baseSettings.pullDrafts,
-      pullPublished: baseSettings.pullPublished,
+      pullDrafts,
+      pullPublished,
       conflictStrategy,
-      syncMode: baseSettings.syncMode,
-      adapter,
+      syncMode,
     };
 
     const config: DaemonConfig = {
       ...baseSettings,
       vaultPath,
       watchDebounceMs: existing?.watchDebounceMs ?? 2000,
-      targets: [target],
+      targets: upsertTarget(existingTargets, target),
     };
 
     await saveConfig(config);
     console.log(`\nWrote config to ${configPath()}`);
+    if (config.targets.length > 1) {
+      console.log(`This config has ${config.targets.length} targets. Use \`ghost-sync target list\` to see them.`);
+    }
     console.log('Next: run `ghost-sync sync` to verify, then `ghost-sync install` for background watch.');
+    console.log('Add more connections any time with `ghost-sync target add`.');
   } finally {
     rl.close();
   }

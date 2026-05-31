@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import Foundation
 
@@ -61,10 +62,26 @@ final class DashboardController: ObservableObject {
     /// construct a `DashboardController()` without dependencies.
     weak var statusStore: StatusStore?
     weak var supervisor: DaemonSupervisor?
+    /// Connect-form controllers, so per-card / Settings "Edit" can pre-fill the
+    /// matching platform form before its window opens. Optional for previews.
+    weak var ghostConnect: GhostConnectController?
+    weak var wordpressConnect: WordPressConnectController?
 
     func configure(store: StatusStore, supervisor: DaemonSupervisor) {
         self.statusStore = store
         self.supervisor = supervisor
+    }
+
+    func configure(
+        store: StatusStore,
+        supervisor: DaemonSupervisor,
+        ghostConnect: GhostConnectController,
+        wordpressConnect: WordPressConnectController
+    ) {
+        self.statusStore = store
+        self.supervisor = supervisor
+        self.ghostConnect = ghostConnect
+        self.wordpressConnect = wordpressConnect
     }
 
     private var timer: Timer?
@@ -188,6 +205,66 @@ final class DashboardController: ObservableObject {
 
     enum TargetAction { case pull, push, sync, dryRun }
 
+    /// Find the configured target by handle (the dashboard view-model only
+    /// carries display fields, so Edit/Remove re-read the real config).
+    private func configTarget(handle: String) -> TargetConfig? {
+        ConfigStore.load()?.targets?.first(where: { $0.handle == handle })
+    }
+
+    /// Pre-fill the matching per-platform connect form and return the window id
+    /// to open, or nil for platforms with no in-app edit form (Shopify is
+    /// re-authorized through the web OAuth flow, not a local form). Caller
+    /// (the view) performs `openWindow(id:)` because window opening needs the
+    /// SwiftUI environment.
+    func prepareEdit(handle: String) -> String? {
+        guard let target = configTarget(handle: handle) else { return nil }
+        switch target.adapter {
+        case .ghost:
+            ghostConnect?.loadForEditing(target)
+            return "ghost-connect"
+        case .wordpress:
+            wordpressConnect?.loadForEditing(target)
+            return "wordpress-connect"
+        case .shopify:
+            // No local edit form — re-authorize via the web flow.
+            if let url = URL(string: "https://spectersync.com/connect-shopify") {
+                NSWorkspace.shared.open(url)
+            }
+            return nil
+        }
+    }
+
+    /// Remove a target from `config.targets[]` and re-save. Vault files stay on
+    /// disk. Restarts the daemon so the watcher drops the removed folder, then
+    /// reloads the dashboard.
+    func removeTarget(handle: String) {
+        let confirm = NSAlert()
+        confirm.messageText = "Disconnect \(handle)?"
+        confirm.informativeText = "This removes the connection from Specter. Your local markdown files are left untouched."
+        confirm.addButton(withTitle: "Disconnect")
+        confirm.addButton(withTitle: "Cancel")
+        guard confirm.runModal() == .alertFirstButtonReturn else { return }
+        do {
+            let ok = try ConfigStore.removeTarget(handle: handle)
+            if !ok {
+                MenuActions.notify("Specter", "Couldn't remove \(handle) — target not found.")
+            } else {
+                MenuActions.notify("Specter", "Disconnected \(handle).")
+            }
+        } catch {
+            MenuActions.notify("Specter", "Couldn't remove \(handle): \(error.localizedDescription)")
+        }
+        supervisor?.restart()
+        reload()
+    }
+
+    /// Run `test --target <handle>` so the user can verify a connection from
+    /// the card menu without leaving the dashboard.
+    func testTarget(handle: String) {
+        guard let store = statusStore else { return }
+        MenuActions.runForTarget("test", targetHandle: handle, store: store)
+    }
+
     /// Load `state.json` using the same decoder as `StatusStore`. Returns nil
     /// if the file isn't there yet (daemon hasn't run).
     private func loadDaemonState() -> DaemonState? {
@@ -249,7 +326,8 @@ final class DashboardController: ObservableObject {
                 lastSyncedRelative: lastSyncedRelative,
                 summary: summary,
                 autoSync: tc.syncMode == "auto",
-                conflictCount: conflictCount
+                conflictCount: conflictCount,
+                label: tc.label
             )
         }
     }
@@ -481,8 +559,7 @@ private struct DashboardMain: View {
             case .targets:   TargetsPane(controller: controller, onPreviewTarget: onPreviewTarget)
             case .activity:  ActivityPane(controller: controller)
             case .conflicts: ConflictsPane(controller: controller)
-            case .settings:  PlaceholderPane(title: "Settings",
-                                             message: "Targets list + defaults panel lands here (spec S6).")
+            case .settings:  SettingsPane(controller: controller)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -505,9 +582,15 @@ private struct TargetsPane: View {
                     Spacer()
                     Menu("+ Add target") {
                         Button("Ghost…") {
+                            // First run (no config yet) still goes through
+                            // onboarding so the user picks a vault folder; once
+                            // a base config exists, add Nth Ghost blogs via the
+                            // dedicated connect form (which appends a new target
+                            // rather than overwriting the single-Ghost slot).
+                            controller.ghostConnect?.reset()
                             NSApplication.shared.setActivationPolicy(.regular)
                             NSApplication.shared.activate(ignoringOtherApps: true)
-                            openWindow(id: ConfigStore.exists ? "settings" : "onboarding")
+                            openWindow(id: ConfigStore.exists ? "ghost-connect" : "onboarding")
                         }
                         Button("Shopify…") {
                             if let url = URL(string: "https://spectersync.com/connect-shopify") {
@@ -538,7 +621,15 @@ private struct TargetsPane: View {
                                 onPull:   { controller.runAction(.pull,   handle: target.id) },
                                 onPush:   { controller.runAction(.push,   handle: target.id) },
                                 onDryRun: { onPreviewTarget(target.id) },
-                                onMore:   { /* future: per-card menu */ },
+                                onEdit:   {
+                                    if let windowId = controller.prepareEdit(handle: target.id) {
+                                        NSApplication.shared.setActivationPolicy(.regular)
+                                        NSApplication.shared.activate(ignoringOtherApps: true)
+                                        openWindow(id: windowId)
+                                    }
+                                },
+                                onTest:   { controller.testTarget(handle: target.id) },
+                                onRemove: { controller.removeTarget(handle: target.id) },
                                 onResolveConflict: { /* future: per-target conflict */ },
                                 onAutoSyncChange: { enabled in
                                     controller.setAutoSync(handle: target.id,
@@ -697,6 +788,102 @@ private struct ConflictsPane: View {
         .padding(DS.Space.section)
         .frame(maxWidth: DS.Space.containerMax, alignment: .topLeading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// Settings → Targets list (spec S6). Renders every connection with its
+/// handle / platform / label / vault folder and per-row Edit + Disconnect
+/// actions, reusing the same controller methods the dashboard cards call.
+private struct SettingsPane: View {
+    @ObservedObject var controller: DashboardController
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: DS.Space.section) {
+                Text("Settings")
+                    .font(DS.Typography.headlineMd())
+                    .foregroundStyle(DS.Text.primary)
+
+                VStack(alignment: .leading, spacing: DS.Space.unit) {
+                    Text("Connections")
+                        .font(DS.Typography.headlineSm())
+                        .foregroundStyle(DS.Text.primary)
+                    Text("Every CMS target Specter syncs. Each lives in its own vault folder.")
+                        .font(DS.Typography.bodySm())
+                        .foregroundStyle(DS.Text.muted)
+                }
+
+                if controller.targets.isEmpty {
+                    Text("No connections yet. Add one from the Targets tab.")
+                        .font(DS.Typography.bodyMd())
+                        .foregroundStyle(DS.Text.muted)
+                        .dsCard(padding: DS.Space.gutter)
+                } else {
+                    VStack(spacing: DS.Space.unit * 1.5) {
+                        ForEach(controller.targets) { target in
+                            TargetSettingsRow(
+                                target: target,
+                                onEdit: {
+                                    if let windowId = controller.prepareEdit(handle: target.id) {
+                                        NSApplication.shared.setActivationPolicy(.regular)
+                                        NSApplication.shared.activate(ignoringOtherApps: true)
+                                        openWindow(id: windowId)
+                                    }
+                                },
+                                onTest:   { controller.testTarget(handle: target.id) },
+                                onRemove: { controller.removeTarget(handle: target.id) }
+                            )
+                        }
+                    }
+                }
+            }
+            .padding(DS.Space.section)
+            .frame(maxWidth: DS.Space.containerMax, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
+}
+
+private struct TargetSettingsRow: View {
+    let target: SyncTarget
+    var onEdit: () -> Void
+    var onTest: () -> Void
+    var onRemove: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: DS.Space.gutter) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(displayLabel)
+                        .font(DS.Typography.headlineSm())
+                        .foregroundStyle(DS.Text.primary)
+                    DSPill(text: target.platform.displayName, tone: .neutral)
+                }
+                Text(target.id)
+                    .font(DS.Typography.bodySm())
+                    .foregroundStyle(DS.Text.muted)
+                    .textSelection(.enabled)
+                Text(target.siteUrl)
+                    .font(DS.Typography.bodySm())
+                    .foregroundStyle(DS.Text.outline)
+                Text(target.summary)
+                    .font(DS.Typography.bodySm())
+                    .foregroundStyle(DS.Text.outline)
+            }
+            Spacer()
+            HStack(spacing: 8) {
+                Button("Edit", action: onEdit).buttonStyle(DSGhostButtonStyle())
+                Button("Test", action: onTest).buttonStyle(DSGhostButtonStyle())
+                Button("Disconnect", action: onRemove)
+                    .buttonStyle(DSGhostButtonStyle(tone: DS.Status.error))
+            }
+        }
+        .dsCard(padding: DS.Space.gutter)
+    }
+
+    private var displayLabel: String {
+        target.label.isEmpty ? target.platform.displayName : target.label
     }
 }
 

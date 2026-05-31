@@ -16,6 +16,8 @@ struct SyncTarget: Identifiable, Hashable {
     var summary: String                    // "12 posts · vault/blog"
     var autoSync: Bool
     var conflictCount: Int = 0
+    /// User-facing label from `TargetConfig.label` (e.g. "Marketing blog").
+    var label: String = ""
 }
 
 struct SyncCard: View {
@@ -24,7 +26,9 @@ struct SyncCard: View {
     var onPull: () -> Void = {}
     var onPush: () -> Void = {}
     var onDryRun: () -> Void = {}
-    var onMore: () -> Void = {}
+    var onEdit: () -> Void = {}
+    var onTest: () -> Void = {}
+    var onRemove: () -> Void = {}
     var onResolveConflict: () -> Void = {}
     /// Called when the user toggles auto-sync. The Dashboard persists this
     /// to `config.targets[handle].syncMode` and restarts the daemon so the
@@ -78,24 +82,35 @@ struct SyncCard: View {
                     Button("Resolve conflict", action: onResolveConflict)
                         .buttonStyle(DSGhostButtonStyle(tone: DS.Status.warning))
                     Spacer()
-                    Button(action: onMore) {
-                        Image(systemName: "ellipsis")
-                    }
-                    .buttonStyle(DSGhostButtonStyle())
+                    moreMenu
                 } else {
                     Button("Pull",   action: onPull).buttonStyle(DSGhostButtonStyle())
                     Button("Push",   action: onPush).buttonStyle(DSGhostButtonStyle())
                     Button("Dry-run", action: onDryRun)
                         .buttonStyle(DSGhostButtonStyle(dashed: true))
                     Spacer()
-                    Button(action: onMore) {
-                        Image(systemName: "ellipsis")
-                    }
-                    .buttonStyle(DSGhostButtonStyle())
+                    moreMenu
                 }
             }
         }
         .dsCard()
+    }
+
+    /// Per-card overflow menu: Edit (reopen the platform connect form
+    /// pre-filled), Test connection, and Disconnect (remove from config;
+    /// vault files left in place).
+    private var moreMenu: some View {
+        Menu {
+            Button("Edit…", action: onEdit)
+            Button("Test connection", action: onTest)
+            Divider()
+            Button("Disconnect…", role: .destructive, action: onRemove)
+        } label: {
+            Image(systemName: "ellipsis")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
     }
 
     // MARK: Helpers

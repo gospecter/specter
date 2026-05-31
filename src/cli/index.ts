@@ -6,6 +6,7 @@ import { statusCommand } from './status.js';
 import { installCommand, uninstallCommand } from './install.js';
 import { resolveCommand } from './resolve.js';
 import { testCommand } from './test.js';
+import { registerTargetCommands } from './target.js';
 import {
   activateCommand as licenseActivate,
   deactivateCommand as licenseDeactivate,
@@ -86,6 +87,8 @@ export async function main(): Promise<void> {
     .command('status')
     .description('Show last sync time, status, and config path')
     .action(statusCommand);
+
+  registerTargetCommands(program);
 
   program
     .command('test')

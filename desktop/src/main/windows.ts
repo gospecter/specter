@@ -36,3 +36,36 @@ export function consumePendingPreviewTarget(): string | null {
   pendingPreviewTarget = null;
   return t;
 }
+
+// ── Pending connect prefill (Dashboard "Edit" → connect window) ─────────────
+//
+// When the dashboard's ⋯ → Edit action opens a per-platform connect window to
+// edit an existing target, it stashes the target's current fields here. The
+// connect renderer reads them on load (via `connect:pending`) to pre-fill the
+// form. Unlike the preview slot this is NOT one-shot — the renderer may read it
+// more than once during load — so it's cleared explicitly when the window
+// finishes (or a fresh "Add" flow overwrites it with null).
+
+export interface PendingConnect {
+  platform: 'ghost' | 'wordpress';
+  /** Present only when editing an existing target. */
+  handle?: string;
+  label?: string;
+  // Ghost
+  ghostUrl?: string;
+  adminApiKey?: string;
+  // WordPress
+  siteUrl?: string;
+  username?: string;
+  appPassword?: string;
+}
+
+let pendingConnect: PendingConnect | null = null;
+
+export function setPendingConnect(payload: PendingConnect | null): void {
+  pendingConnect = payload;
+}
+
+export function getPendingConnect(): PendingConnect | null {
+  return pendingConnect;
+}

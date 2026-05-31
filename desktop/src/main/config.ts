@@ -2,10 +2,14 @@
  * Reads and writes the daemon's config.json.
  * Shape mirrors src/config.ts DaemonConfig + GhostSyncSettings + TargetConfig.
  *
- * v0.4.0: gained `targets[]`. The Electron UI is still single-target — it
- * edits the legacy flat fields, and `writeConfig` regenerates targets[0]
- * from those fields on save. Hand-edited multi-target configs round-trip
- * cleanly (targets[1..N] preserved).
+ * v0.4.0: gained `targets[]`. v0.6.x: the Electron UI is fully multi-target —
+ * it adds unlimited targets of any platform via `upsertGhostTarget` /
+ * `upsertWordPressTarget` / `upsertShopifyTarget`, each with a unique slugified
+ * handle and its own per-handle sync folder. `writeConfig` is NON-DESTRUCTIVE:
+ * it preserves every target verbatim (see `mergeTargetsForConfig`) and only
+ * synthesizes a single `handle:'ghost'` target on the empty-targets first run.
+ * The legacy flat fields are kept as a mirror of `targets[0]` so the old
+ * single-Ghost Settings window still round-trips.
  */
 
 import fs from 'fs';
@@ -13,6 +17,8 @@ import path from 'path';
 import { configFilePath, configDir } from './paths.js';
 import {
   mergeTargetsForConfig,
+  slugifyHandle,
+  uniqueHandle,
   type AdapterConfig,
   type AppConfig,
   type TargetConfig,
@@ -70,8 +76,89 @@ export function readConfig(): AppConfig | null {
 
 export function writeConfig(cfg: AppConfig): void {
   fs.mkdirSync(configDir(), { recursive: true });
-  const toWrite: AppConfig = { ...cfg, targets: mergeTargetsForConfig(cfg.targets, cfg) };
+
+  // Two callers, two contracts:
+  //
+  // 1. The per-platform upsert helpers (Ghost/WordPress/Shopify) pass an
+  //    explicit `cfg.targets[]` — that list is already the full, deduped set
+  //    and must be written VERBATIM. We never collapse or re-synthesize it.
+  //
+  // 2. The legacy single-Ghost Settings/onboarding window passes a flat config
+  //    with NO `targets` field. It edits the primary Ghost connection, so we
+  //    fold the flat Ghost creds into targets[0] (the existing Ghost target, if
+  //    any) while PRESERVING targets[1..N] read back from disk. On a truly
+  //    empty config this synthesizes the very first Ghost target.
+  let targets: TargetConfig[];
+  if (cfg.targets && cfg.targets.length > 0) {
+    targets = cfg.targets;
+  } else {
+    const onDisk = readConfig()?.targets ?? [];
+    targets = applyLegacyGhostEdit(onDisk, cfg);
+  }
+
+  // Keep the legacy flat fields as a faithful mirror of targets[0] so the old
+  // single-Ghost Settings window keeps round-tripping. A non-Ghost first target
+  // clears the Ghost-specific creds (they no longer describe a live connection)
+  // but never drops any target.
+  const toWrite: AppConfig = { ...cfg, targets, ...legacyFromTargets(targets) };
   writeConfigAtomic(toWrite);
+}
+
+/**
+ * Fold the legacy flat Ghost fields into the existing target list, editing the
+ * primary Ghost target in place (handle preserved) and keeping every other
+ * target. When there's no Ghost target yet, synthesize one via
+ * `mergeTargetsForConfig` and append the rest.
+ */
+function applyLegacyGhostEdit(
+  existing: TargetConfig[],
+  legacy: AppConfig,
+): TargetConfig[] {
+  const ghostIdx = existing.findIndex((t) => t.adapter.platform === 'ghost');
+  if (ghostIdx >= 0) {
+    const next = [...existing];
+    const prev = next[ghostIdx];
+    next[ghostIdx] = {
+      ...prev,
+      syncFolderPath: legacy.syncFolderPath,
+      pullDrafts: legacy.pullDrafts,
+      pullPublished: legacy.pullPublished,
+      conflictStrategy: legacy.conflictStrategy,
+      syncMode: legacy.syncMode,
+      adapter: {
+        ...prev.adapter,
+        platform: 'ghost',
+        ghostUrl: legacy.ghostUrl,
+        adminApiKey: legacy.adminApiKey,
+      },
+    };
+    return next;
+  }
+  // No Ghost target yet: synthesize the first one, then append any existing
+  // (non-Ghost) targets so they survive a legacy save.
+  const synthesized = mergeTargetsForConfig(undefined, legacy)[0];
+  return [synthesized, ...existing];
+}
+
+/**
+ * Project `targets[0]` back onto the legacy flat fields. Returns only the
+ * fields that should mirror the first target so callers can spread it over the
+ * config. A Ghost first-target fills ghostUrl/adminApiKey/syncFolderPath; any
+ * other platform clears the Ghost-specific creds (the flat fields no longer
+ * describe a live Ghost connection) while preserving every target.
+ */
+function legacyFromTargets(
+  targets: TargetConfig[],
+): Pick<AppConfig, 'ghostUrl' | 'adminApiKey' | 'syncFolderPath'> {
+  const first = targets[0];
+  if (first && first.adapter.platform === 'ghost') {
+    return {
+      ghostUrl: first.adapter.ghostUrl ?? '',
+      adminApiKey: first.adapter.adminApiKey ?? '',
+      syncFolderPath: first.syncFolderPath ?? '',
+    };
+  }
+  return { ghostUrl: '', adminApiKey: '', syncFolderPath: '' };
 }
 
 /**
@@ -153,6 +240,7 @@ export function upsertWordPressTarget(
   siteUrl: string,
   username: string,
   appPassword: string,
+  label?: string,
 ): void {
   const current = readConfig();
   if (!current?.vaultPath) {
@@ -161,13 +249,28 @@ export function upsertWordPressTarget(
 
   const normalizedUrl = normalizeWordPressSiteUrl(siteUrl);
   const host = hostnameOf(normalizedUrl) || 'site';
-  const slug = host.replace(/\./g, '-').replace(/_/g, '-').toLowerCase();
-  const handle = `wordpress-${slug}`;
+
+  const targets = current.targets ? [...current.targets] : [];
+  const idx = targets.findIndex(
+    (existing) =>
+      existing.adapter.platform === 'wordpress' &&
+      hostnameOf(existing.adapter.siteUrl ?? '') === host,
+  );
+
+  // Editing an existing site keeps its handle (and therefore its folder);
+  // a brand-new site gets a unique slugified handle so it can never collide
+  // with another target's handle or its derived `handle/` sync folder.
+  const handle =
+    idx >= 0
+      ? targets[idx].handle
+      : uniqueHandle(slugifyHandle(host || label || 'wordpress'), targets.map((t) => t.handle));
 
   const target: TargetConfig = {
     handle,
-    label: 'WordPress',
-    syncFolderPath: handle,
+    label: label?.trim() || (idx >= 0 ? targets[idx].label : 'WordPress'),
+    // Empty by default → the daemon's effective folder is the handle itself,
+    // giving each WordPress site its own isolated folder.
+    syncFolderPath: idx >= 0 ? targets[idx].syncFolderPath : '',
     pullDrafts: current.pullDrafts,
     pullPublished: current.pullPublished,
     conflictStrategy: current.conflictStrategy,
@@ -180,18 +283,118 @@ export function upsertWordPressTarget(
     },
   };
 
-  const targets = current.targets ? [...current.targets] : [];
-  const idx = targets.findIndex(
-    (existing) =>
-      existing.adapter.platform === 'wordpress' &&
-      hostnameOf(existing.adapter.siteUrl ?? '') === host,
-  );
   if (idx >= 0) {
     targets[idx] = target;
   } else {
     targets.push(target);
   }
   writeConfig({ ...current, targets });
+}
+
+/**
+ * Add or update a Ghost blog target from the connect form. Mirrors
+ * `upsertWordPressTarget`: a NEW blog gets a unique slugified handle (from the
+ * Ghost URL host, falling back to the label), de-duped against every existing
+ * handle, with an EMPTY syncFolderPath so each blog lands in its own
+ * `handle/` folder. An existing blog (matched by normalized host) is updated
+ * in place, preserving its handle and folder.
+ *
+ * Unlike the legacy single-Ghost Settings window — which folds creds into
+ * targets[0] — this never touches any other target, so a second/third Ghost
+ * blog coexists with the first.
+ */
+export function upsertGhostTarget(
+  ghostUrl: string,
+  adminApiKey: string,
+  label?: string,
+): void {
+  const current = readConfig();
+  if (!current?.vaultPath) {
+    throw new Error('Set up a local sync folder before adding a Ghost blog.');
+  }
+
+  const normalizedUrl = normalizeGhostUrl(ghostUrl);
+  const host = hostnameOf(normalizedUrl) || 'ghost';
+
+  const targets = current.targets ? [...current.targets] : [];
+  const idx = targets.findIndex(
+    (existing) =>
+      existing.adapter.platform === 'ghost' &&
+      hostnameOf(existing.adapter.ghostUrl ?? '') === host,
+  );
+
+  const handle =
+    idx >= 0
+      ? targets[idx].handle
+      : uniqueHandle(slugifyHandle(host || label || 'ghost'), targets.map((t) => t.handle));
+
+  const target: TargetConfig = {
+    handle,
+    label: label?.trim() || (idx >= 0 ? targets[idx].label : 'Ghost'),
+    syncFolderPath: idx >= 0 ? targets[idx].syncFolderPath : '',
+    pullDrafts: current.pullDrafts,
+    pullPublished: current.pullPublished,
+    conflictStrategy: current.conflictStrategy,
+    syncMode: current.syncMode,
+    adapter: {
+      platform: 'ghost',
+      ghostUrl: normalizedUrl,
+      adminApiKey,
+    },
+  };
+
+  if (idx >= 0) {
+    targets[idx] = target;
+  } else {
+    targets.push(target);
+  }
+  writeConfig({ ...current, targets });
+}
+
+/**
+ * Remove a target by handle. Splices it out of `targets[]` and writes the
+ * config atomically (via writeConfig, which preserves the remaining targets
+ * verbatim). Returns false when the handle is unknown so callers can surface a
+ * meaningful error. The supervisor restart is the caller's responsibility
+ * (see the `config:remove-target` IPC handler).
+ */
+export function removeTarget(
+  handle: string,
+): { ok: true } | { ok: false; error: string } {
+  const current = readConfig();
+  if (!current) return { ok: false, error: 'No config on disk yet.' };
+  const targets = current.targets ?? [];
+  const idx = targets.findIndex((t) => t.handle === handle);
+  if (idx < 0) return { ok: false, error: `Unknown target: ${handle}` };
+
+  const nextTargets = targets.filter((_, i) => i !== idx);
+  try {
+    // Write the trimmed list verbatim. We bypass writeConfig's legacy-edit
+    // branch by always passing an explicit `targets` array — when the last
+    // target is removed we pass an empty array so the daemon sees "no targets"
+    // rather than a re-synthesized Ghost.
+    writeConfigAtomic({
+      ...current,
+      targets: nextTargets,
+      ...(nextTargets[0]?.adapter.platform === 'ghost'
+        ? {
+            ghostUrl: nextTargets[0].adapter.ghostUrl ?? '',
+            adminApiKey: nextTargets[0].adapter.adminApiKey ?? '',
+            syncFolderPath: nextTargets[0].syncFolderPath ?? '',
+          }
+        : { ghostUrl: '', adminApiKey: '', syncFolderPath: '' }),
+    });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+function normalizeGhostUrl(raw: string): string {
+  let s = raw.trim();
+  if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+  while (s.endsWith('/')) s = s.slice(0, -1);
+  return s;
 }
 
 function normalizeWordPressSiteUrl(raw: string): string {
@@ -224,16 +427,25 @@ export function upsertShopifyTarget(shop: string, token: string | ShopifyTokenFi
   const tokenFields: ShopifyTokenFields =
     typeof token === 'string' ? { accessToken: token } : token;
 
-  const handle = shop
-    .replace(/\.myshopify\.com$/i, '')
-    .replace(/[^a-z0-9-]+/gi, '-')
-    .replace(/^-+|-+$/g, '')
-    .toLowerCase();
+  const targets = current.targets ? [...current.targets] : [];
+  const idx = targets.findIndex(
+    (existing) => existing.adapter.platform === 'shopify' && existing.adapter.shop === shop,
+  );
+
+  // New store → unique slugified handle so a 2nd Shopify store can't collide
+  // with the first (the old code hardcoded syncFolderPath:'shopify', which
+  // would have made two stores share a folder). Existing store keeps its handle.
+  const storeSlug = slugifyHandle(shop.replace(/\.myshopify\.com$/i, '')) || 'store';
+  const handle =
+    idx >= 0
+      ? targets[idx].handle
+      : uniqueHandle(`shopify-${storeSlug}`, targets.map((t) => t.handle));
 
   const target: TargetConfig = {
-    handle: `shopify-${handle || 'store'}`,
-    label: 'Shopify',
-    syncFolderPath: 'shopify',
+    handle,
+    label: idx >= 0 ? targets[idx].label : 'Shopify',
+    // Empty by default → each store syncs into its own `handle/` folder.
+    syncFolderPath: idx >= 0 ? targets[idx].syncFolderPath : '',
     pullDrafts: current.pullDrafts,
     pullPublished: current.pullPublished,
     conflictStrategy: current.conflictStrategy,
@@ -248,10 +460,6 @@ export function upsertShopifyTarget(shop: string, token: string | ShopifyTokenFi
     },
   };
 
-  const targets = current.targets ? [...current.targets] : [];
-  const idx = targets.findIndex(
-    (existing) => existing.adapter.platform === 'shopify' && existing.adapter.shop === shop,
-  );
   if (idx >= 0) {
     targets[idx] = target;
   } else {

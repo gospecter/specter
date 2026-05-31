@@ -360,3 +360,78 @@ body.ds { margin: 0; height: 100%; }
   font-size: var(--ds-fs-body-md);
   color: var(--ds-text-muted);
 }
+
+/* ── Per-card ⋯ menu (Edit / Remove) ───────────────────────────────────────── */
+
+.card-menu {
+  z-index: 50;
+  min-width: 152px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--ds-bg-surface, #fff);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.card-menu button {
+  all: unset;
+  cursor: pointer;
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-md);
+  color: var(--ds-text-primary);
+  padding: 7px 10px;
+  border-radius: var(--ds-radius);
+}
+
+.card-menu button:hover { background: var(--ds-bg-hover); }
+.card-menu button.danger,
+.btn-ghost.danger { color: var(--ds-error); }
+.card-menu button.danger:hover {
+  background: color-mix(in srgb, var(--ds-error) 12%, transparent);
+}
+
+/* ── Settings pane: Targets list (spec S6) ─────────────────────────────────── */
+
+.targets-table {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--ds-gutter);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius);
+  overflow: hidden;
+}
+
+.target-row {
+  display: grid;
+  grid-template-columns: 14px 88px 1fr 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ds-border-subtle);
+}
+
+.target-row:last-child { border-bottom: none; }
+
+.target-row .tr-platform {
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-md);
+  color: var(--ds-text-primary);
+}
+
+.target-row .tr-url,
+.target-row .tr-folder {
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-body-md);
+  color: var(--ds-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-row .tr-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

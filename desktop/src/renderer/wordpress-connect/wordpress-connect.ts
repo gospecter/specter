@@ -12,6 +12,7 @@ const $ = (id: string) => document.getElementById(id)!;
 const siteUrlInput = $('wp-site-url') as HTMLInputElement;
 const usernameInput = $('wp-username') as HTMLInputElement;
 const appPasswordInput = $('wp-app-password') as HTMLInputElement;
+const labelInput = document.getElementById('wp-label') as HTMLInputElement | null;
 const testBtn = $('btn-test') as HTMLButtonElement;
 const connectBtn = $('btn-connect') as HTMLButtonElement;
 const cancelBtn = $('btn-cancel') as HTMLButtonElement;
@@ -21,6 +22,7 @@ const saveError = $('save-error');
 const helpLink = $('wp-help-link') as HTMLAnchorElement;
 
 let testPassed = false;
+let editingHandle: string | null = null;
 
 function updateButtons(): void {
   const hasFields =
@@ -28,7 +30,9 @@ function updateButtons(): void {
     !!usernameInput.value.trim() &&
     !!appPasswordInput.value.trim();
   testBtn.disabled = !hasFields;
-  connectBtn.disabled = !testPassed;
+  // In edit mode the existing connection is already known-good, so allow saving
+  // (e.g. a label change) without re-running the connection test.
+  connectBtn.disabled = !(testPassed || editingHandle !== null) || !hasFields;
 }
 
 function clearTestResult(): void {
@@ -104,8 +108,9 @@ connectBtn.addEventListener('click', async () => {
   const appPassword = appPasswordInput.value.replace(/\s+/g, '');
   connectBtn.disabled = true;
 
+  const label = labelInput?.value.trim() || undefined;
   try {
-    const result = await window.api.wordpress.connect(siteUrl, username, appPassword);
+    const result = await window.api.wordpress.connect(siteUrl, username, appPassword, label);
     if (result.ok) {
       window.close();
     } else {
@@ -124,6 +129,23 @@ cancelBtn.addEventListener('click', () => {
   window.close();
 });
 
-updateButtons();
+// Pre-fill on load when editing an existing WordPress site.
+async function init(): Promise<void> {
+  try {
+    const pending = await window.api.connect.pending();
+    if (pending && pending.platform === 'wordpress') {
+      editingHandle = pending.handle ?? null;
+      if (pending.siteUrl) siteUrlInput.value = pending.siteUrl;
+      if (pending.username) usernameInput.value = pending.username;
+      if (pending.appPassword) appPasswordInput.value = pending.appPassword;
+      if (labelInput && pending.label) labelInput.value = pending.label;
+    }
+  } catch {
+    /* fresh add flow */
+  }
+  updateButtons();
+}
+
+void init();
 
 export {};

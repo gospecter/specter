@@ -243,17 +243,17 @@ struct SettingsView: View {
     private func freeView(status: LicenseStatus) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Label("Free", systemImage: "person")
+                Label("Not activated", systemImage: "person")
                     .font(.subheadline.weight(.semibold))
-                Text("\(status.syncCount) of \(status.freeLimit) uploads used this month")
+                Text("Activate Specter Pro to upload changes.")
                     .font(.caption)
-                    .foregroundStyle(status.remainingFree == 0 ? .red : .secondary)
+                    .foregroundStyle(.secondary)
             }
             Spacer()
             Button {
                 NSWorkspace.shared.open(MenuActions.buyProURL)
             } label: {
-                Label("Buy Specter Pro — $49", systemImage: "cart")
+                Label("Subscribe — $99/year", systemImage: "cart")
             }
         }
 

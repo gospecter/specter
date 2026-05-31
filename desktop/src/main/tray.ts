@@ -3,7 +3,7 @@
  *
  * Menu structure mirrors mac/Sources/Specter/App.swift MenuView:
  *
- *   Specter [Manual] [Free]
+ *   Specter [Manual] [Not activated]
  *   Status / message line
  *   Last sync: Xm ago
  *   ─────────────────────
@@ -16,7 +16,7 @@
  *   Preferences…
  *   Launch at Login  /  Disable Launch at Login
  *   ─────────────────────
- *   Buy Specter Pro…   (Free users only)
+ *   Buy Specter Pro…   (unlicensed users only)
  *   ─────────────────────
  *   Open Sync Folder
  *   View Logs
@@ -107,10 +107,9 @@ export function destroyTray(): void {
 export function rebuildMenu(tray: Tray, supervisor: DaemonSupervisor): void {
   const state = readState();
   const config = readConfig();
-  const { tier: licenseTier, syncCount } = readLicenseInfo();
+  const { tier: licenseTier } = readLicenseInfo();
   const isFree = licenseTier === 'free';
   const isManual = config?.syncMode === 'manual';
-  const freeLimit = 200;
 
   const statusLabel = buildStatusLabel(supervisor, state, isManual);
   const lastSync = lastSyncRelative(state.lastSyncAt);
@@ -181,12 +180,12 @@ export function rebuildMenu(tray: Tray, supervisor: DaemonSupervisor): void {
       click: () => autoLaunch.toggle(),
     },
 
-    // ── Buy Pro (Free users only) ─────────────────────────────────────────
+    // ── Buy Pro (unlicensed users only) ───────────────────────────────────
     ...(isFree
       ? [
           { type: 'separator' as const },
           {
-            label: `Buy Specter Pro — ${syncCount}/${freeLimit} used`,
+            label: 'Subscribe to Specter Pro',
             click: () => shell.openExternal(BUY_PRO_URL),
           },
         ]
@@ -234,7 +233,7 @@ export function rebuildMenu(tray: Tray, supervisor: DaemonSupervisor): void {
 function buildHeaderLabel(isManual: boolean, isFree: boolean): string {
   let label = 'Specter';
   if (isManual) label += '  [Manual]';
-  if (isFree) label += '  [Free]';
+  if (isFree) label += '  [Not activated]';
   return label;
 }
 
@@ -274,8 +273,8 @@ function runDaemonCommand(
       notify('Specter', `${cmd}: ${msg}`);
     } else if (isLicenseLimitError(stderr)) {
       notify(
-        'Specter — Free limit reached',
-        "You've used all 200 free uploads this month.",
+        'Specter Pro required',
+        'Activate your license key to sync.',
       );
       showLicenseLimitDialog();
     } else {
@@ -288,17 +287,16 @@ function runDaemonCommand(
 }
 
 function isLicenseLimitError(raw: string): boolean {
-  return raw.includes('Free tier upload limit reached');
+  return raw.includes('Specter Pro required');
 }
 
 function showLicenseLimitDialog(): void {
   dialog
     .showMessageBox({
       type: 'info',
-      title: "You've reached your free limit",
-      message: 'Free includes 200 uploads per month, across all connected sites.',
-      detail:
-        'Upgrade to Specter Pro for unlimited uploads — a one-time $49 purchase.',
+      title: 'Specter Pro is required',
+      message: 'Activate your license key to sync.',
+      detail: 'The app can be installed without a key, but syncing requires an active Specter Pro subscription.',
       buttons: ['Upgrade to Specter Pro', 'Not Now'],
       defaultId: 0,
     })

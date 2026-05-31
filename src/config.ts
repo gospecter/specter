@@ -12,6 +12,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { AdapterConfig } from './cms/types.js';
+import { effectiveRoot } from './sync/targets.js';
 import { ConflictItem, DEFAULT_SETTINGS, GhostSyncSettings } from './types.js';
 
 /**
@@ -202,7 +203,133 @@ export function synthesizeLegacyTarget(settings: GhostSyncSettings): TargetConfi
   };
 }
 
+/**
+ * Allowed handle format: starts with a lowercase letter or digit, then
+ * lowercase letters, digits, and hyphens. A target's handle is also its folder
+ * name in multi-target vaults, so it must be URL- and path-safe (no slashes,
+ * dots, spaces, or `..`).
+ */
+export const HANDLE_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+/**
+ * Turn an arbitrary string (a label, host, or shop domain) into a handle that
+ * satisfies `HANDLE_RE`. Strips any URL scheme, lowercases, collapses runs of
+ * non-alphanumerics to single hyphens, and trims leading/trailing hyphens.
+ * Falls back to `'target'` if nothing usable remains.
+ */
+export function slugifyHandle(input: string): string {
+  const noProto = input.replace(/^[a-z]+:\/\//i, '');
+  const slug = noProto
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug || 'target';
+}
+
+/**
+ * Return a handle based on `base` that does not collide with any in `taken`.
+ * Appends `-2`, `-3`, … until unique. `base` is slugified first so callers can
+ * pass a raw label/host.
+ */
+export function ensureUniqueHandle(base: string, taken: Iterable<string>): string {
+  const set = new Set(taken);
+  const root = slugifyHandle(base);
+  let candidate = root;
+  let n = 2;
+  while (set.has(candidate)) {
+    candidate = `${root}-${n}`;
+    n += 1;
+  }
+  return candidate;
+}
+
+/**
+ * Derive a sensible default handle base for a target from its adapter — the
+ * CMS host/shop is more recognisable than the platform name and naturally
+ * distinguishes two blogs of the same platform.
+ */
+export function defaultHandleBase(adapter: AdapterConfig): string {
+  switch (adapter.platform) {
+    case 'ghost':
+      return adapter.ghostUrl || 'ghost';
+    case 'wordpress':
+      return adapter.siteUrl || 'wordpress';
+    case 'shopify':
+      return adapter.shop || 'shopify';
+    default:
+      return 'target';
+  }
+}
+
+/**
+ * Validate the multi-target invariants the engine relies on. Throws a
+ * descriptive Error on the first violation. Enforced by `saveConfig` (never
+ * write a broken config) and `requireConfig` (never run against one):
+ *  - every handle matches `HANDLE_RE`,
+ *  - handles are unique,
+ *  - no two targets resolve to the same effective sync folder.
+ */
+export function validateTargets(targets: TargetConfig[]): void {
+  const seenHandles = new Set<string>();
+  const rootOwner = new Map<string, string>();
+  const isMulti = targets.length > 1;
+  for (const t of targets) {
+    if (!t.handle || !HANDLE_RE.test(t.handle)) {
+      throw new Error(
+        `Invalid target handle ${JSON.stringify(t.handle)}. Handles must be lowercase letters, digits, and hyphens (e.g. "my-blog").`,
+      );
+    }
+    if (seenHandles.has(t.handle)) {
+      throw new Error(
+        `Duplicate target handle "${t.handle}". Each target needs a unique handle.`,
+      );
+    }
+    seenHandles.add(t.handle);
+    const root = effectiveRoot(t, isMulti);
+    const prior = rootOwner.get(root);
+    if (prior !== undefined) {
+      throw new Error(
+        `Targets "${prior}" and "${t.handle}" both resolve to the same sync folder ${JSON.stringify(root || '<vault root>')}. Give them distinct handles or syncFolderPaths.`,
+      );
+    }
+    rootOwner.set(root, t.handle);
+  }
+}
+
+/**
+ * Insert or replace a target in `targets` by handle, returning a new array
+ * (does not mutate the input). If a target with the same handle exists it is
+ * replaced in place; otherwise the target is appended. Validates the result so
+ * callers can't produce a colliding list.
+ */
+export function upsertTarget(
+  targets: TargetConfig[],
+  target: TargetConfig,
+): TargetConfig[] {
+  const idx = targets.findIndex((t) => t.handle === target.handle);
+  const next =
+    idx === -1
+      ? [...targets, target]
+      : targets.map((t, i) => (i === idx ? target : t));
+  validateTargets(next);
+  return next;
+}
+
+/** Remove the target with `handle`, returning a new array. Throws if no
+ *  target matches so callers surface a clear "no such target" error. */
+export function removeTarget(
+  targets: TargetConfig[],
+  handle: string,
+): TargetConfig[] {
+  const next = targets.filter((t) => t.handle !== handle);
+  if (next.length === targets.length) {
+    throw new Error(`No target with handle "${handle}".`);
+  }
+  return next;
+}
+
 export async function saveConfig(config: DaemonConfig): Promise<void> {
+  validateTargets(config.targets);
   await fs.mkdir(configDir(), { recursive: true });
   await fs.writeFile(configPath(), JSON.stringify(config, null, 2) + '\n', 'utf8');
   // Windows uses NTFS ACLs; user-profile directory is already user-private.
@@ -263,5 +390,8 @@ export function requireConfig(config: DaemonConfig | null): DaemonConfig {
   if (!config.vaultPath) {
     throw new Error('Config is missing vaultPath. Run `ghost-sync init`.');
   }
+  // Catches hand-edited configs with duplicate/invalid handles or colliding
+  // folders before any sync work touches disk.
+  validateTargets(config.targets);
   return config;
 }

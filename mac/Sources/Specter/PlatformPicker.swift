@@ -41,7 +41,7 @@ enum Platform: String, CaseIterable, Identifiable {
 }
 
 struct PlatformPickerView: View {
-    /// Locked tiles render the Pro badge and reject taps. Free tier locks all
+    /// Locked tiles render the Pro badge and reject taps. Unlicensed installs lock all
     /// but the first chosen platform.
     var lockedPlatforms: Set<Platform> = []
     var onSelect: (Platform) -> Void

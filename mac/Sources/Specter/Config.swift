@@ -158,6 +158,56 @@ enum AdapterConfig: Codable, Equatable {
     }
 }
 
+/// Handle conventions mirrored from `src/config.ts` (`slugifyHandle` +
+/// `ensureUniqueHandle`). The daemon's `saveConfig` validates targets against
+/// `HANDLE_RE` and rejects collisions, so the Swift side must produce handles
+/// that satisfy the exact same rules or saves the daemon would reject.
+enum TargetHandle {
+    /// `^[a-z0-9][a-z0-9-]*$` — lowercase letters, digits, hyphens; path-safe.
+    /// Strips URL scheme, lowercases, collapses runs of non-[a-z0-9] to a single
+    /// hyphen, trims leading/trailing hyphens. Falls back to "target".
+    static func slugify(_ input: String) -> String {
+        // Drop any leading scheme (https://, etc.).
+        var s = input
+        if let r = s.range(of: "://") {
+            s = String(s[r.upperBound...])
+        }
+        s = s.lowercased()
+        // Collapse every run of non-[a-z0-9] into a single hyphen.
+        var out = ""
+        var lastWasHyphen = false
+        for ch in s {
+            if ch.isLowercaseASCIILetterOrDigit {
+                out.append(ch)
+                lastWasHyphen = false
+            } else if !lastWasHyphen {
+                out.append("-")
+                lastWasHyphen = true
+            }
+        }
+        while out.hasPrefix("-") { out.removeFirst() }
+        while out.hasSuffix("-") { out.removeLast() }
+        return out.isEmpty ? "target" : out
+    }
+
+    /// Return a slug of `base` that doesn't collide with `taken`, appending
+    /// `-2`, `-3`, … until unique.
+    static func unique(base: String, taken: [String]) -> String {
+        let set = Set(taken)
+        let root = slugify(base)
+        if !set.contains(root) { return root }
+        var n = 2
+        while set.contains("\(root)-\(n)") { n += 1 }
+        return "\(root)-\(n)"
+    }
+}
+
+private extension Character {
+    var isLowercaseASCIILetterOrDigit: Bool {
+        ("a"..."z").contains(self) || ("0"..."9").contains(self)
+    }
+}
+
 enum ConfigStore {
     /// Returns the current config, or nil if no file exists yet (first launch).
     static func load() -> DaemonConfig? {
@@ -169,9 +219,9 @@ enum ConfigStore {
         let dir = Paths.configPath.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
-        // Regenerate targets[] from the legacy fields IF there's no existing
-        // multi-target config to preserve. Single-target users get a clean
-        // round-trip; hand-edited multi-target configs keep their extras.
+        // Preserve targets[] verbatim when present (never drop or re-handle a
+        // target); only synthesize a single Ghost target from the legacy flat
+        // fields on first run when no targets exist yet. See `mergeTargets`.
         var toWrite = config
         toWrite.targets = mergeTargets(existing: config.targets, legacy: config)
 
@@ -189,7 +239,9 @@ enum ConfigStore {
     static func upsertWordPressTarget(
         siteUrl: String,
         username: String,
-        appPassword: String
+        appPassword: String,
+        label: String? = nil,
+        editingHandle: String? = nil
     ) throws {
         guard var config = load(), !config.vaultPath.isEmpty else {
             throw ConfigError.missingBaseConfig
@@ -197,37 +249,44 @@ enum ConfigStore {
 
         let normalized = normalizeWordPressSiteUrl(siteUrl)
         let host = hostnameFromUrl(normalized).isEmpty ? "site" : hostnameFromUrl(normalized)
-        let slug = host
-            .replacingOccurrences(of: ".", with: "-")
-            .replacingOccurrences(of: "_", with: "-")
-            .lowercased()
-        let handle = "wordpress-\(slug)"
-
-        let target = TargetConfig(
-            handle: handle,
-            label: "WordPress",
-            syncFolderPath: handle,
-            pullDrafts: config.pullDrafts,
-            pullPublished: config.pullPublished,
-            conflictStrategy: config.conflictStrategy,
-            syncMode: config.syncMode,
-            adapter: .wordpress(.init(
-                siteUrl: normalized,
-                username: username,
-                appPassword: appPassword
-            ))
-        )
+        let resolvedLabel = (label?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap {
+            $0.isEmpty ? nil : $0
+        } ?? "WordPress"
+        let adapter: AdapterConfig = .wordpress(.init(
+            siteUrl: normalized,
+            username: username,
+            appPassword: appPassword
+        ))
 
         var targets = config.targets ?? []
-        if let idx = targets.firstIndex(where: {
+        // Reuse the row identified by editingHandle (Edit flow) or an existing
+        // WordPress target pointing at the same host; otherwise append a new one
+        // with a fresh unique, slugified handle and its own folder (empty
+        // syncFolderPath → daemon uses `<handle>/`).
+        let existingIdx = targets.firstIndex(where: {
+            if let editingHandle { return $0.handle == editingHandle }
             if case .wordpress(let w) = $0.adapter {
                 return hostnameFromUrl(w.siteUrl) == host
             }
             return false
-        }) {
-            targets[idx] = target
+        })
+
+        if let idx = existingIdx {
+            targets[idx].label = resolvedLabel
+            targets[idx].adapter = adapter
         } else {
-            targets.append(target)
+            let taken = targets.map { $0.handle }
+            let handle = TargetHandle.unique(base: host, taken: taken)
+            targets.append(TargetConfig(
+                handle: handle,
+                label: resolvedLabel,
+                syncFolderPath: "",
+                pullDrafts: config.pullDrafts,
+                pullPublished: config.pullPublished,
+                conflictStrategy: config.conflictStrategy,
+                syncMode: config.syncMode,
+                adapter: adapter
+            ))
         }
         config.targets = targets
         try save(config)
@@ -259,52 +318,198 @@ enum ConfigStore {
             throw ConfigError.missingBaseConfig
         }
 
-        let handle = shop
-            .replacingOccurrences(of: ".myshopify.com", with: "")
-            .replacingOccurrences(of: ".", with: "-")
-            .replacingOccurrences(of: "_", with: "-")
-            .lowercased()
-
-        let target = TargetConfig(
-            handle: "shopify-\(handle)",
-            label: "Shopify",
-            syncFolderPath: "shopify",
-            pullDrafts: config.pullDrafts,
-            pullPublished: config.pullPublished,
-            conflictStrategy: config.conflictStrategy,
-            syncMode: config.syncMode,
-            adapter: .shopify(.init(
-                shop: shop,
-                accessToken: accessToken,
-                refreshToken: refreshToken,
-                accessTokenExpiresAt: accessTokenExpiresAt,
-                refreshTokenExpiresAt: refreshTokenExpiresAt,
-                apiVersion: nil
-            ))
-        )
+        let adapter: AdapterConfig = .shopify(.init(
+            shop: shop,
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+            accessTokenExpiresAt: accessTokenExpiresAt,
+            refreshTokenExpiresAt: refreshTokenExpiresAt,
+            apiVersion: nil
+        ))
 
         var targets = config.targets ?? []
         if let idx = targets.firstIndex(where: {
             if case .shopify(let s) = $0.adapter { return s.shop == shop }
             return false
         }) {
-            targets[idx] = target
+            // Same store re-authorized: refresh credentials, keep handle/folder.
+            targets[idx].adapter = adapter
         } else {
-            targets.append(target)
+            // New store: unique slugified handle from the shop domain, and an
+            // empty syncFolderPath so the daemon gives it its own `<handle>/`
+            // folder. A hardcoded shared folder would collide with a second store.
+            let taken = targets.map { $0.handle }
+            let handle = TargetHandle.unique(base: shop, taken: taken)
+            targets.append(TargetConfig(
+                handle: handle,
+                label: "Shopify",
+                syncFolderPath: "",
+                pullDrafts: config.pullDrafts,
+                pullPublished: config.pullPublished,
+                conflictStrategy: config.conflictStrategy,
+                syncMode: config.syncMode,
+                adapter: adapter
+            ))
         }
         config.targets = targets
         try save(config)
     }
 
-    /// Single-target case (or no existing targets): regenerate targets[0]
-    /// from the legacy fields so the daemon picks up UI changes.
-    /// Multi-target case: replace only the first Ghost target's URL/key from
-    /// the legacy fields; leave targets[1..N] untouched.
+    /// Append (or update) a Ghost blog target. Mirrors the Shopify/WordPress
+    /// upserts so a second, third, … Ghost blog can be added without
+    /// overwriting the first — each gets a unique slugified handle derived from
+    /// its host (falling back to the label) and an empty `syncFolderPath` so the
+    /// daemon isolates it under its own `<handle>/` folder.
+    ///
+    /// `editingHandle`, when set, targets an existing row for in-place edit
+    /// (URL/key/label change) without minting a new handle.
+    static func upsertGhostTarget(
+        ghostUrl: String,
+        adminApiKey: String,
+        label: String? = nil,
+        editingHandle: String? = nil
+    ) throws {
+        guard var config = load(), !config.vaultPath.isEmpty else {
+            throw ConfigError.missingBaseConfig
+        }
+
+        let normalized = normalizeGhostUrl(ghostUrl)
+        let host = hostnameFromUrl(normalized).isEmpty ? "ghost" : hostnameFromUrl(normalized)
+        let resolvedLabel = (label?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap {
+            $0.isEmpty ? nil : $0
+        } ?? "Ghost"
+        let adapter: AdapterConfig = .ghost(.init(
+            ghostUrl: normalized,
+            adminApiKey: adminApiKey
+        ))
+
+        var targets = config.targets ?? []
+        let existingIdx = targets.firstIndex(where: {
+            if let editingHandle { return $0.handle == editingHandle }
+            if case .ghost(let g) = $0.adapter {
+                return hostnameFromUrl(g.ghostUrl) == host
+            }
+            return false
+        })
+
+        if let idx = existingIdx {
+            targets[idx].label = resolvedLabel
+            targets[idx].adapter = adapter
+        } else {
+            let base = host == "ghost" ? resolvedLabel : host
+            let taken = targets.map { $0.handle }
+            let handle = TargetHandle.unique(base: base, taken: taken)
+            targets.append(TargetConfig(
+                handle: handle,
+                label: resolvedLabel,
+                syncFolderPath: "",
+                pullDrafts: config.pullDrafts,
+                pullPublished: config.pullPublished,
+                conflictStrategy: config.conflictStrategy,
+                syncMode: config.syncMode,
+                adapter: adapter
+            ))
+        }
+
+        // Keep the legacy flat fields aligned with targets[0] for downgrade
+        // compatibility (save() also derives them, but only when targets[0] is
+        // Ghost — do it here too so a first Ghost add sticks immediately).
+        if let first = targets.first, case .ghost(let g) = first.adapter {
+            config.ghostUrl = g.ghostUrl
+            config.adminApiKey = g.adminApiKey
+            config.syncFolderPath = first.syncFolderPath
+        }
+
+        config.targets = targets
+        try save(config)
+    }
+
+    /// Remove the target with `handle` from `targets[]` and re-save. Vault
+    /// files are left in place (the daemon never deletes folders on
+    /// disconnect). Returns false if no config or no matching target.
+    @discardableResult
+    static func removeTarget(handle: String) throws -> Bool {
+        guard var config = load() else { return false }
+        guard var targets = config.targets,
+              let idx = targets.firstIndex(where: { $0.handle == handle })
+        else { return false }
+        targets.remove(at: idx)
+        config.targets = targets
+        // If the removed target was a Ghost blog that legacy fields mirrored,
+        // re-point the legacy mirror at whatever Ghost target remains (or clear
+        // it). save()'s mergeTargets will not resurrect the removed row because
+        // it now preserves targets[] verbatim for the non-empty case.
+        if let firstGhost = targets.first(where: {
+            if case .ghost = $0.adapter { return true }
+            return false
+        }), case .ghost(let g) = firstGhost.adapter {
+            config.ghostUrl = g.ghostUrl
+            config.adminApiKey = g.adminApiKey
+            config.syncFolderPath = firstGhost.syncFolderPath
+        } else {
+            config.ghostUrl = ""
+            config.adminApiKey = ""
+        }
+        try save(config)
+        return true
+    }
+
+    private static func normalizeGhostUrl(_ raw: String) -> String {
+        var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !s.isEmpty && !s.contains("://") { s = "https://" + s }
+        while s.hasSuffix("/") { s.removeLast() }
+        return s
+    }
+
+    /// Reconcile `targets[]` with the legacy flat fields on save.
+    ///
+    /// Multi-target safety (the whole point of this rewrite): when an explicit
+    /// `targets[]` already exists it is preserved VERBATIM — no target is
+    /// dropped, re-handled, or collapsed into a single "ghost" slot. We only
+    /// fold the legacy flat fields back into `targets[0]` when that first
+    /// target is a Ghost blog (the single-Ghost UI still edits the flat fields
+    /// via onboarding/Settings); every other target — including a 2nd Ghost
+    /// blog at `targets[1..N]` — is left exactly as the caller passed it.
+    ///
+    /// First-run only: when there are no targets yet but the legacy fields hold
+    /// a Ghost connection, synthesize the single `ghost` target so the daemon
+    /// has something to run. This keeps the original first-run behavior without
+    /// ever clobbering an established multi-target config.
     private static func mergeTargets(
         existing: [TargetConfig]?,
         legacy: DaemonConfig
-    ) -> [TargetConfig] {
-        let synthesized = TargetConfig(
+    ) -> [TargetConfig]? {
+        if var existing = existing, !existing.isEmpty {
+            // Fold the legacy flat fields back onto targets[0] ONLY in the
+            // single-target Ghost case — that's the one configuration the
+            // legacy onboarding/Settings editor owns (it edits the flat
+            // ghostUrl/adminApiKey/syncFolderPath, not targets[]). In any
+            // multi-target config the dedicated per-platform forms write
+            // targets[] directly, and the legacy `syncFolderPath` mirror is
+            // meaningless there (each target's folder is its handle), so we
+            // preserve every target verbatim and never re-derive from the flat
+            // fields — this is what stops a 2nd Ghost blog from being dropped.
+            if existing.count == 1, case .ghost(let g) = existing[0].adapter {
+                existing[0].adapter = .ghost(.init(
+                    ghostUrl: legacy.ghostUrl.isEmpty ? g.ghostUrl : legacy.ghostUrl,
+                    adminApiKey: legacy.adminApiKey.isEmpty ? g.adminApiKey : legacy.adminApiKey
+                ))
+                existing[0].syncFolderPath = legacy.syncFolderPath
+                existing[0].pullDrafts = legacy.pullDrafts
+                existing[0].pullPublished = legacy.pullPublished
+                existing[0].conflictStrategy = legacy.conflictStrategy
+                existing[0].syncMode = legacy.syncMode
+            }
+            return existing
+        }
+
+        // No targets yet. Only synthesize a first-run Ghost target when the
+        // legacy fields actually describe a connection; otherwise leave nil so
+        // we don't write an empty/placeholder target.
+        guard !legacy.ghostUrl.isEmpty || !legacy.adminApiKey.isEmpty else {
+            return nil
+        }
+        return [TargetConfig(
             handle: "ghost",
             label: "Ghost",
             syncFolderPath: legacy.syncFolderPath,
@@ -316,18 +521,7 @@ enum ConfigStore {
                 ghostUrl: legacy.ghostUrl,
                 adminApiKey: legacy.adminApiKey
             ))
-        )
-        guard var existing = existing, !existing.isEmpty else {
-            return [synthesized]
-        }
-        if let ghostIdx = existing.firstIndex(where: {
-            if case .ghost = $0.adapter { return true }
-            return false
-        }) {
-            existing[ghostIdx] = synthesized
-            return existing
-        }
-        return [synthesized] + existing
+        )]
     }
 
     static var exists: Bool {

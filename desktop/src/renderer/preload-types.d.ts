@@ -79,6 +79,17 @@ export interface DashboardSnapshot {
   targets: DashboardTarget[];
 }
 
+export interface PendingConnect {
+  platform: 'ghost' | 'wordpress';
+  handle?: string;
+  label?: string;
+  ghostUrl?: string;
+  adminApiKey?: string;
+  siteUrl?: string;
+  username?: string;
+  appPassword?: string;
+}
+
 export interface SpecterApi {
   config: {
     read: () => Promise<AppConfig | null>;
@@ -88,9 +99,19 @@ export interface SpecterApi {
       handle: string,
       mode: 'auto' | 'manual',
     ) => Promise<ApiResult>;
+    removeTarget: (handle: string) => Promise<ApiResult>;
+    editTarget: (handle: string) => Promise<ApiResult>;
   };
   ghost: {
     test: (url: string, key: string) => Promise<ApiResult>;
+    connect: (
+      ghostUrl: string,
+      adminApiKey: string,
+      label?: string,
+    ) => Promise<ApiResult>;
+  };
+  connect: {
+    pending: () => Promise<PendingConnect | null>;
   };
   wordpress: {
     test: (
@@ -102,6 +123,7 @@ export interface SpecterApi {
       siteUrl: string,
       username: string,
       appPassword: string,
+      label?: string,
     ) => Promise<ApiResult>;
   };
   daemon: {

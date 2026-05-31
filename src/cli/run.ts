@@ -18,8 +18,8 @@ import {
 import { CmsApiError } from '../cms/types.js';
 import { notify } from '../notify.js';
 import { ConflictItem, PlanEntry, SyncPlan } from '../types.js';
-import { recordSync, remainingFree } from '../license/gate.js';
-import { FREE_TIER_LIMIT, loadLicense, rolloverIfNeeded } from '../license/state.js';
+import { assertPro, recordSync, remainingFree } from '../license/gate.js';
+import { loadLicense, rolloverIfNeeded } from '../license/state.js';
 import { targetSyncSettings } from '../sync/targets.js';
 import { refreshShopifyAccessToken, shopifyTokenNeedsRefresh } from '../shopify/oauth.js';
 
@@ -70,6 +70,7 @@ export async function runOnce(
   const config = requireConfig(await loadConfig());
   // Throws "no target with handle ..." before any work happens.
   const selected = selectTargets(config.targets, opts.target);
+  await assertPro();
 
   if (opts.dryRun) {
     const silentPlanLogs = opts.silent ?? opts.json ?? false;
@@ -275,7 +276,7 @@ async function executeRun(
   const perTarget: TargetOutcome[] = [];
   let limitMessage: string | null = null;
 
-  // No-headroom short-circuit: free user with cap=0 wants to push. Compute
+  // No-headroom short-circuit: unlicensed user with cap=0 wants to push. Compute
   // the would-be push across all targets in one go via the existing planner,
   // then short-circuit without ever invoking engine.push().
   if (!isPro && (mode === 'push' || mode === 'sync') && remainingFree(license) === 0) {
@@ -283,7 +284,7 @@ async function executeRun(
       const pushPlan = await planRun('push', config, selected, true);
       const wouldUpload = pushPlan.creates.length + pushPlan.updates.length;
       if (wouldUpload > 0) {
-        limitMessage = freeLimitMessage(license.syncCount, wouldUpload);
+        limitMessage = freeLimitMessage(wouldUpload);
         deferred = wouldUpload;
       }
     } catch {
@@ -313,7 +314,7 @@ async function executeRun(
           await rebuildAfterShopifyRefresh();
         }
 
-        // Pull is unlimited on every tier.
+        // Pull requires Pro; runOnce checks before this point.
         if (mode === 'pull' || mode === 'sync') {
           const r = await engine.pull();
           outcome.pulled = r.created.length + r.updated.length;
@@ -325,7 +326,7 @@ async function executeRun(
           }
         }
 
-        // Push is gated by the shared free-tier cap. Compute headroom on each
+        // Push is gated by the shared upload cap. Compute headroom on each
         // pass so earlier targets don't starve later ones — the cap is shared.
         if ((mode === 'push' || mode === 'sync') && !limitMessage) {
           const cap = isPro
@@ -393,11 +394,11 @@ async function executeRun(
     }
 
     if (!isPro && deferred > 0 && !limitMessage) {
-      limitMessage = freeLimitMessage(license.syncCount + pushed, deferred);
+      limitMessage = freeLimitMessage(deferred);
     }
 
     // Counter increment AFTER the operation succeeded. Only uploads (pushes)
-    // count against the free-tier cap — pulls are unlimited.
+    // count against upload stats — pulls are unlimited.
     if (pushed > 0) {
       await recordSync(pushed);
     }
@@ -482,9 +483,9 @@ function summary(
   return parts.join(', ');
 }
 
-function freeLimitMessage(used: number, deferredCount: number): string {
+function freeLimitMessage(deferredCount: number): string {
   return (
-    `Free tier upload limit reached (${used}/${FREE_TIER_LIMIT} this month). ` +
+    `Specter Pro required. Activate your license key to sync. ` +
     `${deferredCount} post${deferredCount === 1 ? '' : 's'} deferred. ` +
     `Upgrade to Specter Pro for unlimited uploads.`
   );

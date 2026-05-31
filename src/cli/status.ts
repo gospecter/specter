@@ -1,4 +1,5 @@
 import { configPath, loadConfig, loadState, logPath, statePath } from '../config.js';
+import { effectiveRoot } from '../sync/targets.js';
 
 export async function statusCommand(): Promise<void> {
   const config = await loadConfig();
@@ -16,17 +17,35 @@ export async function statusCommand(): Promise<void> {
   }
 
   console.log('');
-  console.log(`Ghost URL:     ${config.ghostUrl}`);
   console.log(`Vault root:    ${config.vaultPath}`);
-  console.log(`Sync folder:   ${config.syncFolderPath}`);
-  console.log(`Conflict:      ${config.conflictStrategy}`);
-  console.log(`Pull drafts:   ${config.pullDrafts}`);
-  console.log(`Pull pub'd:    ${config.pullPublished}`);
+  console.log(`Targets:       ${config.targets.length}`);
+
+  const isMulti = config.targets.length > 1;
+  for (const t of config.targets) {
+    const ts = state.targets?.[t.handle];
+    const root = effectiveRoot(t, isMulti) || '<vault root>';
+    console.log('');
+    console.log(`▸ ${t.handle}  [${t.adapter.platform}]  "${t.label}"`);
+    console.log(`    Folder:      ${root}`);
+    console.log(`    Conflict:    ${t.conflictStrategy}   Mode: ${t.syncMode}`);
+    console.log(`    Pull:        drafts=${t.pullDrafts} published=${t.pullPublished}`);
+    if (ts) {
+      console.log(`    Last sync:   ${ts.lastSyncAt ?? 'never'}  (${ts.lastSyncStatus ?? 'never'})`);
+      console.log(`    Last counts: pulled=${ts.lastPullCount} pushed=${ts.lastPushCount} conflicts=${ts.lastConflicts}`);
+      if (ts.lastError) console.log(`    Last error:  ${ts.lastError}`);
+    } else {
+      console.log(`    Last sync:   never`);
+    }
+  }
 
   console.log('');
-  console.log(`Last sync:     ${state.lastSyncAt ?? 'never'}`);
-  console.log(`Status:        ${state.lastSyncStatus}`);
+  console.log('Overall');
+  console.log(`    Last sync:   ${state.lastSyncAt ?? 'never'}`);
+  console.log(`    Status:      ${state.lastSyncStatus}`);
   if (state.lastSyncMessage) {
-    console.log(`Message:       ${state.lastSyncMessage}`);
+    console.log(`    Message:     ${state.lastSyncMessage}`);
+  }
+  if (state.conflicts.length > 0) {
+    console.log(`    Conflicts:   ${state.conflicts.length} queued (run \`ghost-sync resolve\`)`);
   }
 }

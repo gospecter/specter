@@ -329,8 +329,8 @@ enum MenuActions {
                     let msg = store.state.lastSyncMessage ?? "Done"
                     notify("Specter", "\(label): \(msg)")
                 } else if isLicenseLimitError(errMessage) {
-                    notify("Specter — Free limit reached",
-                           "You've used all 200 free uploads this month.")
+                    notify("Specter Pro required",
+                           "Activate your license key to sync.")
                     showLicenseLimitAlert()
                 } else {
                     notify("Specter failed", errMessage)
@@ -412,20 +412,19 @@ enum MenuActions {
     /// overlay checkout.
     static let buyProURL = URL(string: "https://spectersync.com/#buy")!
 
-    /// Whether a daemon stderr dump is a free-tier upload-limit error.
+    /// Whether a daemon stderr dump is a Pro-required sync error.
     static func isLicenseLimitError(_ raw: String) -> Bool {
-        raw.contains("Free tier upload limit reached")
+        raw.contains("Specter Pro required")
     }
 
-    /// A simple upgrade prompt shown when a free-tier user hits the monthly
-    /// upload cap. Fixed copy + one upgrade action — no daemon text echoed.
+    /// A simple upgrade prompt shown when an unlicensed user tries to sync.
+    /// Fixed copy + one upgrade action — no daemon text echoed.
     static func showLicenseLimitAlert() {
         let alert = NSAlert()
         alert.alertStyle = .informational
-        alert.messageText = "You've reached your free limit"
+        alert.messageText = "Specter Pro is required"
         alert.informativeText =
-            "Free includes 200 uploads per month, across all connected sites. "
-            + "Upgrade to Specter Pro for unlimited uploads — a one-time $49 purchase."
+            "The app can be installed without a key, but syncing requires an active Specter Pro subscription."
         alert.addButton(withTitle: "Upgrade to Specter Pro")
         alert.addButton(withTitle: "Not Now")
         if alert.runModal() == .alertFirstButtonReturn {
@@ -474,7 +473,7 @@ struct MenuView: View {
                         .cornerRadius(3)
                 }
                 if license.isFree {
-                    Text("Free")
+                    Text("Not activated")
                         .font(.caption2.weight(.medium))
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
@@ -506,10 +505,10 @@ struct MenuView: View {
             Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
         }
         Button { MenuActions.run("pull", store: store) } label: {
-            Label("Pull from Ghost", systemImage: "icloud.and.arrow.down")
+            Label("Pull from CMS", systemImage: "icloud.and.arrow.down")
         }
         Button { MenuActions.run("push", store: store) } label: {
-            Label("Push to Ghost", systemImage: "icloud.and.arrow.up")
+            Label("Push to CMS", systemImage: "icloud.and.arrow.up")
         }
         Button {
             preview.configure(targetHandle: nil)
@@ -547,14 +546,14 @@ struct MenuView: View {
                   systemImage: LoginItem.isEnabled ? "checkmark" : "power")
         }
 
-        // Buy Pro shortcut, only when Free.
-        if license.isFree, case .loaded(let status) = license.state {
+        // Buy Pro shortcut, only when not activated.
+        if license.isFree, case .loaded = license.state {
             Divider()
             Button {
                 NSWorkspace.shared.open(MenuActions.buyProURL)
             } label: {
                 Label(
-                    "Buy Specter Pro — \(status.syncCount)/\(status.freeLimit) used",
+                    "Subscribe to Specter Pro",
                     systemImage: "cart"
                 )
             }
@@ -651,6 +650,7 @@ struct SpecterApp: App {
     @StateObject private var updater = UpdaterController()
     @StateObject private var dashboard = DashboardController()
     @StateObject private var wordpressConnect = WordPressConnectController()
+    @StateObject private var ghostConnect = GhostConnectController()
 
     init() {
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -678,7 +678,9 @@ struct SpecterApp: App {
                     // the watcher when the user flips a SyncCard auto-sync
                     // toggle. Done here (not in `init`) because @StateObject
                     // wrappers aren't safe to read until the body is mounted.
-                    dashboard.configure(store: store, supervisor: supervisor)
+                    dashboard.configure(store: store, supervisor: supervisor,
+                                        ghostConnect: ghostConnect,
+                                        wordpressConnect: wordpressConnect)
                     OAuthController.shared.warnIfProtocolOwnerMismatch()
                     license.refresh()
                     if ConfigStore.exists && !supervisor.isRunning {
@@ -740,7 +742,9 @@ struct SpecterApp: App {
                     // line, opening the Dashboard from a fresh launch lands
                     // with statusStore=nil and every per-card button click
                     // silently no-ops on `guard let store = statusStore`.
-                    dashboard.configure(store: store, supervisor: supervisor)
+                    dashboard.configure(store: store, supervisor: supervisor,
+                                        ghostConnect: ghostConnect,
+                                        wordpressConnect: wordpressConnect)
                     NSApplication.shared.setActivationPolicy(.regular)
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }
@@ -780,6 +784,35 @@ struct SpecterApp: App {
         .windowResizability(.contentSize)
         .commandsRemoved()
         .handlesExternalEvents(matching: ["wordpress-connect"])
+
+        Window("Add Ghost", id: "ghost-connect") {
+            GhostConnectView(controller: ghostConnect) {
+                supervisor.restart()
+                dashboard.reload()
+                store.reload()
+                ghostConnect.reset()
+                if let window = NSApplication.shared.windows.first(where: { $0.title == "Add Ghost" }) {
+                    window.close()
+                }
+                NSApplication.shared.setActivationPolicy(.accessory)
+            } onCancel: {
+                ghostConnect.reset()
+                if let window = NSApplication.shared.windows.first(where: { $0.title == "Add Ghost" }) {
+                    window.close()
+                }
+                NSApplication.shared.setActivationPolicy(.accessory)
+            }
+            .onAppear {
+                NSApplication.shared.setActivationPolicy(.regular)
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
+            .onDisappear {
+                NSApplication.shared.setActivationPolicy(.accessory)
+            }
+        }
+        .windowResizability(.contentSize)
+        .commandsRemoved()
+        .handlesExternalEvents(matching: ["ghost-connect"])
 
         Window("Specter Settings", id: "settings") {
             SettingsView(controller: settings, license: license) {

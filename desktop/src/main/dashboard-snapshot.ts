@@ -9,7 +9,7 @@
  */
 
 import type { AppConfig, TargetConfig, AdapterConfig } from './config-merge.js';
-import type { DaemonState } from './state.js';
+import type { DaemonState, TargetSyncState } from './state.js';
 import { lastSyncRelative } from './state.js';
 
 export type DashboardPlatform = 'ghost' | 'shopify' | 'wordpress';
@@ -60,27 +60,38 @@ function buildTarget(
   const siteUrl = siteUrlOf(target.adapter);
   const summary = summaryFor(target, isMulti);
 
-  // Per-target sync state isn't modeled in state.json today. Single-target
-  // configs reuse the global counters; multi-target falls back to "not synced yet".
   let derivedState: DashboardState;
   let conflictCount: number;
   let lastSyncedRelativeStr: string | undefined;
+
+  // Prefer per-target metrics the daemon now writes to state.targets[handle]
+  // (v0.5.1+). They drive each card's status/last-sync/conflict count
+  // independently. Fall back to the global counters only for a lone
+  // single-target config whose handle the daemon hasn't keyed yet (e.g. a
+  // state.json written before per-target metrics existed).
+  const perTarget = state?.targets?.[target.handle];
 
   if (!connected) {
     derivedState = 'disconnected';
     conflictCount = 0;
     lastSyncedRelativeStr = undefined;
-  } else if (isMulti) {
-    derivedState = 'idle';
-    conflictCount = 0;
-    lastSyncedRelativeStr = undefined;
-  } else {
+  } else if (perTarget) {
+    conflictCount = perTarget.lastConflicts ?? 0;
+    derivedState = stateFromTarget(perTarget, conflictCount);
+    const rel = perTarget.lastSyncAt ? lastSyncRelative(perTarget.lastSyncAt) : 'never';
+    lastSyncedRelativeStr = rel === 'never' ? undefined : rel;
+  } else if (!isMulti) {
     conflictCount = state?.lastConflicts ?? 0;
     derivedState = stateFromGlobal(state, conflictCount);
     const rel = state?.lastSyncAt ? lastSyncRelative(state.lastSyncAt) : 'never';
     // `lastSyncRelative` returns "never" when the timestamp is missing; the
     // card's "Synced · {rel}" copy only makes sense once a sync has run.
     lastSyncedRelativeStr = rel === 'never' ? undefined : rel;
+  } else {
+    // Multi-target with no per-target metrics yet → "not synced yet".
+    derivedState = 'idle';
+    conflictCount = 0;
+    lastSyncedRelativeStr = undefined;
   }
 
   return {
@@ -132,6 +143,21 @@ function summaryFor(target: TargetConfig, isMulti: boolean): string {
   if (isMulti) return `vault/${target.handle}`;
   if (target.syncFolderPath) return `vault/${target.syncFolderPath}`;
   return 'vault root';
+}
+
+/** Derive a card state from one target's own metrics (state.targets[handle]).
+ *  Conflicts win over everything; an error status renders as 'error'; a
+ *  'partial' sync (some items failed) also surfaces as 'error' so the user
+ *  notices; otherwise 'idle'. */
+function stateFromTarget(
+  metrics: TargetSyncState,
+  conflictCount: number,
+): DashboardState {
+  if (conflictCount > 0) return 'conflict';
+  if (metrics.lastSyncStatus === 'error' || metrics.lastSyncStatus === 'partial') {
+    return 'error';
+  }
+  return 'idle';
 }
 
 function stateFromGlobal(

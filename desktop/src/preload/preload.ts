@@ -84,6 +84,20 @@ export interface DashboardSnapshot {
   targets: DashboardTarget[];
 }
 
+/** Prefill payload returned by `connect:pending` so a connect window can
+ *  pre-fill its form when editing an existing target. Mirrors `PendingConnect`
+ *  in src/main/windows.ts. */
+export interface PendingConnect {
+  platform: 'ghost' | 'wordpress';
+  handle?: string;
+  label?: string;
+  ghostUrl?: string;
+  adminApiKey?: string;
+  siteUrl?: string;
+  username?: string;
+  appPassword?: string;
+}
+
 const api = {
   config: {
     read: (): Promise<AppConfig | null> =>
@@ -97,10 +111,20 @@ const api = {
       mode: 'auto' | 'manual',
     ): Promise<ApiResult> =>
       ipcRenderer.invoke('config:set-target-sync-mode', { handle, mode }),
+    removeTarget: (handle: string): Promise<ApiResult> =>
+      ipcRenderer.invoke('config:remove-target', { handle }),
+    editTarget: (handle: string): Promise<ApiResult> =>
+      ipcRenderer.invoke('config:edit-target', { handle }),
   },
   ghost: {
     test: (url: string, key: string): Promise<ApiResult> =>
       ipcRenderer.invoke('ghost:test', url, key),
+    connect: (ghostUrl: string, adminApiKey: string, label?: string): Promise<ApiResult> =>
+      ipcRenderer.invoke('ghost:connect', { ghostUrl, adminApiKey, label }),
+  },
+  connect: {
+    pending: (): Promise<PendingConnect | null> =>
+      ipcRenderer.invoke('connect:pending'),
   },
   wordpress: {
     test: (siteUrl: string, username: string, appPassword: string): Promise<ApiResult> =>
@@ -109,8 +133,9 @@ const api = {
       siteUrl: string,
       username: string,
       appPassword: string,
+      label?: string,
     ): Promise<ApiResult> =>
-      ipcRenderer.invoke('wordpress:connect', { siteUrl, username, appPassword }),
+      ipcRenderer.invoke('wordpress:connect', { siteUrl, username, appPassword, label }),
   },
   daemon: {
     status: (): Promise<DaemonStatusResult> =>

@@ -86,7 +86,7 @@ export async function watchCommand(options: WatchOptions): Promise<void> {
       if (!file) continue;
       if (!runtime.engine.isInSyncFolder(file)) continue;
 
-      // Per-file push = +1 against the shared free-tier cap.
+      // Per-file push = +1 against the shared upload gate.
       try {
         await assertCanSync(1);
       } catch (err) {

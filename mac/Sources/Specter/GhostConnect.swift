@@ -2,31 +2,30 @@ import AppKit
 import Foundation
 import SwiftUI
 
-/// Spec: tasks/spec-wordpress-adapter.md Phase 7.
+/// Standalone window for adding (or editing) a Ghost blog in `targets[]`.
 ///
-/// Standalone window for adding a WordPress site to `targets[]`. Mirrors the
-/// shape of the legacy Ghost Settings form but talks to `upsertWordPressTarget`
-/// so the daemon picks the new target up on next restart.
+/// Mirrors `WordPressConnectController`/`WordPressConnectView` but talks to
+/// `ConfigStore.upsertGhostTarget`, so a second, third, … Ghost blog can be
+/// added without the legacy single-Ghost onboarding overwriting the first.
+/// Each new blog gets a unique slugified handle and its own vault folder.
 @MainActor
-final class WordPressConnectController: ObservableObject {
+final class GhostConnectController: ObservableObject {
     @Published var label: String = ""
-    @Published var siteUrl: String = ""
-    @Published var username: String = ""
-    @Published var appPassword: String = ""
+    @Published var ghostUrl: String = ""
+    @Published var adminApiKey: String = ""
     @Published var testResult: OnboardingController.TestResult = .untested
     @Published var isTesting = false
     @Published var saveError: String?
 
-    /// Set when editing an existing target — drives an in-place upsert (no new
-    /// handle minted) and the window's title/CTA copy.
+    /// Set when the form is opened to edit an existing target. Drives an
+    /// in-place upsert (no new handle minted) and the window's title/CTA copy.
     @Published var editingHandle: String?
 
     var isEditing: Bool { editingHandle != nil }
 
     var canTest: Bool {
-        !siteUrl.trimmingCharacters(in: .whitespaces).isEmpty &&
-        !username.trimmingCharacters(in: .whitespaces).isEmpty &&
-        !appPassword.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !ghostUrl.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !adminApiKey.trimmingCharacters(in: .whitespaces).isEmpty &&
         !isTesting
     }
 
@@ -37,43 +36,33 @@ final class WordPressConnectController: ObservableObject {
 
     func reset() {
         label = ""
-        siteUrl = ""
-        username = ""
-        appPassword = ""
+        ghostUrl = ""
+        adminApiKey = ""
         testResult = .untested
         saveError = nil
         isTesting = false
         editingHandle = nil
     }
 
-    /// Pre-fill the form from an existing WordPress target for the Edit flow.
+    /// Pre-fill the form from an existing Ghost target for the Edit flow.
     func loadForEditing(_ target: TargetConfig) {
-        guard case .wordpress(let w) = target.adapter else { return }
+        guard case .ghost(let g) = target.adapter else { return }
         editingHandle = target.handle
         label = target.label
-        siteUrl = w.siteUrl
-        username = w.username
-        appPassword = w.appPassword
+        ghostUrl = g.ghostUrl
+        adminApiKey = g.adminApiKey
         testResult = .untested
         saveError = nil
         isTesting = false
     }
 
     func runTest() {
-        let url = siteUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-        let user = username.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Application Passwords are displayed space-grouped ("xxxx yyyy ...");
-        // strip spaces before sending so the daemon's WordPressApiClient gets
-        // the raw 24-char string it expects.
-        let pw = appPassword.replacingOccurrences(of: " ", with: "")
+        let url = ghostUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = adminApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         isTesting = true
         testResult = .untested
         DispatchQueue.global().async {
-            let result = ConnectionTester.runWordPress(
-                siteUrl: url,
-                username: user,
-                appPassword: pw
-            )
+            let result = ConnectionTester.run(url: url, key: key)
             DispatchQueue.main.async {
                 self.isTesting = false
                 self.testResult = result
@@ -82,14 +71,12 @@ final class WordPressConnectController: ObservableObject {
     }
 
     func save(completion: @escaping (Bool) -> Void) {
-        let url = siteUrl.trimmingCharacters(in: .whitespacesAndNewlines)
-        let user = username.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pw = appPassword.replacingOccurrences(of: " ", with: "")
+        let url = ghostUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = adminApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-            try ConfigStore.upsertWordPressTarget(
-                siteUrl: url,
-                username: user,
-                appPassword: pw,
+            try ConfigStore.upsertGhostTarget(
+                ghostUrl: url,
+                adminApiKey: key,
                 label: label,
                 editingHandle: editingHandle
             )
@@ -102,50 +89,37 @@ final class WordPressConnectController: ObservableObject {
     }
 }
 
-struct WordPressConnectView: View {
-    @ObservedObject var controller: WordPressConnectController
+struct GhostConnectView: View {
+    @ObservedObject var controller: GhostConnectController
     var onSave: () -> Void
     var onCancel: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(controller.isEditing ? "Edit WordPress site" : "Add a WordPress site")
+            Text(controller.isEditing ? "Edit Ghost blog" : "Add a Ghost blog")
                 .font(.largeTitle).bold()
                 .padding(.horizontal, 24)
                 .padding(.top, 24)
-            Text("Specter signs in with WordPress Application Passwords. No plugin required.")
+            Text("Find your Admin API key under Ghost Admin → Settings → Integrations → Add custom integration.")
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 24)
                 .padding(.top, 4)
                 .padding(.bottom, 18)
 
             Form {
-                Section("Site") {
+                Section("Blog") {
                     TextField("Label (optional)", text: $controller.label,
-                              prompt: Text("My WordPress site"))
-                    TextField("Site URL", text: $controller.siteUrl,
-                              prompt: Text("https://example.com"))
-                        .onChange(of: controller.siteUrl) { _ in
+                              prompt: Text("My Ghost blog"))
+                    TextField("Ghost URL", text: $controller.ghostUrl,
+                              prompt: Text("https://yourblog.ghost.io"))
+                        .onChange(of: controller.ghostUrl) { _ in
                             controller.testResult = .untested
                         }
-                    TextField("Username", text: $controller.username)
-                        .onChange(of: controller.username) { _ in
+                    SecureField("Admin API Key", text: $controller.adminApiKey,
+                                prompt: Text("id:secret"))
+                        .onChange(of: controller.adminApiKey) { _ in
                             controller.testResult = .untested
                         }
-                    SecureField("Application Password", text: $controller.appPassword)
-                        .onChange(of: controller.appPassword) { _ in
-                            controller.testResult = .untested
-                        }
-                    Button {
-                        if let url = URL(string: "https://wordpress.org/documentation/article/application-passwords/") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    } label: {
-                        Label("How to create an Application Password",
-                              systemImage: "questionmark.circle")
-                            .font(.caption)
-                    }
-                    .buttonStyle(.link)
 
                     HStack(spacing: 10) {
                         Button {

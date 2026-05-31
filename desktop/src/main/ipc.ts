@@ -9,7 +9,13 @@
  *   config:write                → { ok: true } | { ok: false; error: string }
  *   config:exists               → boolean
  *   config:set-target-sync-mode → { ok: true } | { ok: false; error: string }
+ *   config:remove-target        → { ok: true } | { ok: false; error: string }
+ *   config:edit-target          → { ok: boolean; error?: string }
  *   ghost:test                  → { ok: boolean; message: string }
+ *   ghost:connect               → { ok: boolean; error?: string }
+ *   connect:pending             → PendingConnect | null
+ *   wordpress:test              → { ok: boolean; message: string }
+ *   wordpress:connect           → { ok: boolean; error?: string }
  *   daemon:status               → { status: SupervisorStatus; lastError: string | null }
  *   daemon:start                → void
  *   daemon:stop                 → void
@@ -32,6 +38,8 @@ import {
   configExists,
   setTargetSyncMode,
   upsertWordPressTarget,
+  upsertGhostTarget,
+  removeTarget,
 } from './config.js';
 import { readState } from './state.js';
 import { buildDashboardSnapshot } from './dashboard-snapshot.js';
@@ -41,6 +49,9 @@ import {
   openWindow,
   setPendingPreviewTarget,
   consumePendingPreviewTarget,
+  setPendingConnect,
+  getPendingConnect,
+  type PendingConnect,
 } from './windows.js';
 
 let supervisor: DaemonSupervisor | null = null;
@@ -79,6 +90,37 @@ export function registerIpcHandlers(sup: DaemonSupervisor): void {
     },
   );
 
+  // ── Ghost connect (multi-target add/edit) ─────────────────────────────────
+  //
+  // Upserts a Ghost blog into config.targets[] with a unique slugified handle
+  // and its own per-handle folder, then restarts the watcher. Unlike the legacy
+  // single-Ghost Settings window, this never overwrites another Ghost target —
+  // a second/third blog coexists with the first.
+
+  handleTrusted(
+    'ghost:connect',
+    (_event, payload: { ghostUrl: string; adminApiKey: string; label?: string }) => {
+      const { ghostUrl, adminApiKey, label } = payload ?? ({} as typeof payload);
+      if (!ghostUrl || !adminApiKey) {
+        return { ok: false, error: 'Missing Ghost URL or Admin API key.' };
+      }
+      try {
+        upsertGhostTarget(ghostUrl, adminApiKey, label);
+        if (supervisor && supervisor.isRunning) {
+          try { supervisor.restart(); } catch { /* best-effort */ }
+        }
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: (err as Error).message };
+      }
+    },
+  );
+
+  // Connect-window prefill: the dashboard's Edit action stashes a target's
+  // current fields; the connect renderer reads them on load. Returns null for
+  // a fresh "Add" flow.
+  handleTrusted('connect:pending', () => getPendingConnect());
+
   // ── WordPress connection test + connect ──────────────────────────────────
   //
   // Both routes for the Phase 7 "Add WordPress site" form. `test` is the ad-hoc
@@ -102,13 +144,16 @@ export function registerIpcHandlers(sup: DaemonSupervisor): void {
 
   handleTrusted(
     'wordpress:connect',
-    (_event, payload: { siteUrl: string; username: string; appPassword: string }) => {
-      const { siteUrl, username, appPassword } = payload ?? ({} as typeof payload);
+    (
+      _event,
+      payload: { siteUrl: string; username: string; appPassword: string; label?: string },
+    ) => {
+      const { siteUrl, username, appPassword, label } = payload ?? ({} as typeof payload);
       if (!siteUrl || !username || !appPassword) {
         return { ok: false, error: 'Missing site URL, username, or application password.' };
       }
       try {
-        upsertWordPressTarget(siteUrl, username, appPassword);
+        upsertWordPressTarget(siteUrl, username, appPassword, label);
         if (supervisor && supervisor.isRunning) {
           try { supervisor.restart(); } catch { /* best-effort */ }
         }
@@ -257,12 +302,82 @@ export function registerIpcHandlers(sup: DaemonSupervisor): void {
     if (typeof name !== 'string' || name.length === 0) {
       return { ok: false, error: 'Missing window name.' };
     }
+    // Opening a connect window from the "+ Add target" menu is always a fresh
+    // add — clear any stale edit prefill left by a prior `config:edit-target`.
+    if (name === 'ghost-connect' || name === 'wordpress-connect') {
+      setPendingConnect(null);
+    }
     if (name === 'settings-or-onboarding') {
       openWindow(configExists() ? 'settings' : 'onboarding');
     } else {
       openWindow(name);
     }
     return { ok: true };
+  });
+
+  // ── Remove a target ──────────────────────────────────────────────────────
+  //
+  // Splices the target out of config.targets[] (atomic write in config.ts) and
+  // restarts the supervised watcher so it stops syncing the removed target.
+
+  handleTrusted('config:remove-target', (_event, payload: { handle: string }) => {
+    const handle = payload?.handle;
+    if (!handle || typeof handle !== 'string') {
+      return { ok: false, error: 'Missing target handle.' };
+    }
+    const result = removeTarget(handle);
+    if (result.ok && supervisor && supervisor.isRunning) {
+      try { supervisor.restart(); } catch { /* best-effort */ }
+    }
+    return result;
+  });
+
+  // ── Edit a target ────────────────────────────────────────────────────────
+  //
+  // Looks up the target by handle, stashes its current fields as a connect
+  // prefill, and opens the matching per-platform connect window. The connect
+  // renderer reads the prefill via `connect:pending` and, on save, upserts by
+  // the same handle (Ghost/WordPress upserts match on host so the handle is
+  // preserved). Shopify edits aren't supported here — its creds come from the
+  // hosted OAuth funnel, not an in-app form.
+
+  handleTrusted('config:edit-target', (_event, payload: { handle: string }) => {
+    const handle = payload?.handle;
+    if (!handle || typeof handle !== 'string') {
+      return { ok: false, error: 'Missing target handle.' };
+    }
+    const target = readConfig()?.targets?.find((t) => t.handle === handle);
+    if (!target) return { ok: false, error: `Unknown target: ${handle}` };
+
+    if (target.adapter.platform === 'ghost') {
+      const prefill: PendingConnect = {
+        platform: 'ghost',
+        handle,
+        label: target.label,
+        ghostUrl: target.adapter.ghostUrl,
+        adminApiKey: target.adapter.adminApiKey,
+      };
+      setPendingConnect(prefill);
+      openWindow('ghost-connect');
+      return { ok: true };
+    }
+    if (target.adapter.platform === 'wordpress') {
+      const prefill: PendingConnect = {
+        platform: 'wordpress',
+        handle,
+        label: target.label,
+        siteUrl: target.adapter.siteUrl,
+        username: target.adapter.username,
+        appPassword: target.adapter.appPassword,
+      };
+      setPendingConnect(prefill);
+      openWindow('wordpress-connect');
+      return { ok: true };
+    }
+    return {
+      ok: false,
+      error: 'Shopify connections are managed through the hosted connect flow.',
+    };
   });
 
   handleTrusted('shell:openExternal', async (_event, url: string) => {

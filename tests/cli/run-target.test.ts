@@ -29,6 +29,7 @@ import { markdownToLexical } from '../../src/ghost/api.js';
 import { GhostAdapter } from '../../src/ghost/adapter.js';
 import type { CmsAdapter } from '../../src/cms/adapter.js';
 import { selectTargets } from '../../src/cli/run.js';
+import { DEFAULT_LICENSE_STATE, saveLicense } from '../../src/license/state.js';
 
 // `createAdapter` is mocked per-test below — vitest hoists vi.mock so the
 // factory is patched before the SUT loads. The implementation is rewired in
@@ -109,6 +110,17 @@ function makeConfig(vaultPath: string, targets: TargetConfig[]): DaemonConfig {
   };
 }
 
+async function activateProForTest(): Promise<void> {
+  await saveLicense({
+    ...DEFAULT_LICENSE_STATE,
+    tier: 'pro',
+    licenseKey: 'ABCD',
+    instanceId: 'inst',
+    activatedAt: new Date().toISOString(),
+    lastValidatedAt: new Date().toISOString(),
+  });
+}
+
 describe('selectTargets', () => {
   const targets = [makeTarget('ghost'), makeTarget('shop')];
 
@@ -136,6 +148,7 @@ describe('runOnce with --target', () => {
 
   beforeEach(async () => {
     dirs = await setupTmpDirs();
+    await activateProForTest();
 
     // Two distinct fake APIs, each seeded with one post so we can tell which
     // one was actually called by inspecting createCount/updateCount.
@@ -247,6 +260,7 @@ describe('per-target state.json writes', () => {
 
   beforeEach(async () => {
     dirs = await setupTmpDirs();
+    await activateProForTest();
 
     ghostFake = new FakeGhostApi().seed([
       makeGhostPost({
