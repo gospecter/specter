@@ -68,6 +68,50 @@ function dotClass(state: State): string {
   return 'success';
 }
 
+// ── Status pills (dark-dashboard mockup) ──────────────────────────────────
+//
+// Maps a target's snapshot state → the labelled, dotted, tinted pill from the
+// redesign spec §5. Precedence:
+//   error           → ERROR
+//   conflict (>0)    → CONFLICT
+//   syncing          → INITIALIZING  (transient "Syncing…", no ETA)
+//   disconnected     → DISCONNECTED  (no live connection)
+//   manual mode      → PAUSED        (autoSync off — not auto-syncing)
+//   auto + ok        → ACTIVE SYNCING (accent/blue)
+// `tone` selects the pill colour family (success/warning/error/neutral/accent).
+
+type PillTone = 'success' | 'warning' | 'error' | 'neutral' | 'accent';
+
+function statusPill(t: DashboardTarget): { label: string; tone: PillTone } {
+  if (t.state === 'error') return { label: 'Error', tone: 'error' };
+  if (t.state === 'conflict' && (t.conflictCount ?? 1) > 0) {
+    return { label: 'Conflict', tone: 'warning' };
+  }
+  if (t.state === 'syncing') return { label: 'Initializing', tone: 'accent' };
+  if (t.state === 'disconnected') return { label: 'Disconnected', tone: 'neutral' };
+  if (!t.autoSync) return { label: 'Paused', tone: 'neutral' };
+  // ACTIVE SYNCING is the mockup's blue accent pill (not green).
+  return { label: 'Active Syncing', tone: 'accent' };
+}
+
+function pillHtml(t: DashboardTarget): string {
+  const pill = statusPill(t);
+  return `<span class="status-pill tone-${pill.tone}"><span class="pill-dot"></span>${escapeHtml(
+    pill.label,
+  )}</span>`;
+}
+
+/** "Last sync: 5m ago" line for the card body / list row. */
+function lastSyncText(t: DashboardTarget): string {
+  if (t.state === 'syncing') return 'Last sync: syncing now…';
+  return t.lastSyncedRelative ? `Last sync: ${t.lastSyncedRelative}` : 'Last sync: never';
+}
+
+/** First letter of the platform name for the icon tile. */
+function platformGlyph(platform: Platform): string {
+  return PLATFORM_LABEL[platform].charAt(0);
+}
+
 function statusLine(t: DashboardTarget): { text: string; tone: '' | 'warning' | 'error' } {
   switch (t.state) {
     case 'idle': {
@@ -115,48 +159,9 @@ function clearTransient(handle: string): void {
   transientMessage.delete(handle);
 }
 
-function renderCard(t: DashboardTarget): HTMLElement {
-  const card = document.createElement('div');
-  card.className = 'sync-card';
-  card.dataset.id = t.id;
-
-  const status = statusLine(t);
-  const transient = transientMessage.get(t.id);
-  const effectiveStatus = transient ?? status;
-  const isConflict = t.state === 'conflict';
-  const busy = inFlight.has(t.id);
-
-  card.innerHTML = `
-    <div class="card-top">
-      <span class="status-dot ${dotClass(t.state)}"></span>
-      <span class="card-platform">${escapeHtml(PLATFORM_LABEL[t.platform])}</span>
-      <span class="card-url">${escapeHtml(t.siteUrl)}</span>
-      <div class="card-top-right">
-        <button class="auto-toggle ${t.autoSync ? 'on' : ''}" data-action="auto" ${busy ? 'disabled' : ''}>
-          <span class="label">Auto</span>
-          <span class="switch"></span>
-        </button>
-      </div>
-    </div>
-    <div class="card-status-line ${effectiveStatus.tone}">${escapeHtml(effectiveStatus.text)}</div>
-    <div class="card-summary">${escapeHtml(t.summary)}</div>
-    <div class="card-kinds">${escapeHtml(kindsSummary(t.contentKinds))}</div>
-    <div class="card-actions">
-      ${
-        isConflict
-          ? `<button class="btn-ghost warning" data-action="resolve" ${busy ? 'disabled' : ''}>Resolve conflict</button>`
-          : `
-            <button class="btn-ghost" data-action="pull" ${busy ? 'disabled' : ''}>Pull</button>
-            <button class="btn-ghost" data-action="push" ${busy ? 'disabled' : ''}>Push</button>
-            <button class="btn-ghost dashed" data-action="dry-run" ${busy ? 'disabled' : ''}>Dry-run</button>
-          `
-      }
-      <span class="spacer"></span>
-      <button class="btn-ghost" data-action="more" ${busy ? 'disabled' : ''}>⋯</button>
-    </div>
-  `;
-
-  card.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((btn) => {
+/** Wire the shared [data-action] click handlers used by both card layouts. */
+function wireCardActions(root: HTMLElement, t: DashboardTarget): void {
+  root.querySelectorAll<HTMLButtonElement>('[data-action]').forEach((btn) => {
     btn.addEventListener('click', (ev) => {
       const action = btn.dataset.action!;
       if (action === 'auto') {
@@ -180,8 +185,90 @@ function renderCard(t: DashboardTarget): HTMLElement {
       }
     });
   });
+}
 
+function renderCard(t: DashboardTarget): HTMLElement {
+  const card = document.createElement('div');
+  card.className = 'sync-card';
+  card.dataset.id = t.id;
+
+  const status = statusLine(t);
+  const transient = transientMessage.get(t.id);
+  const effectiveStatus = transient ?? status;
+  const isConflict = t.state === 'conflict';
+  const busy = inFlight.has(t.id);
+
+  card.innerHTML = `
+    <div class="card-head">
+      <span class="platform-tile" data-platform="${t.platform}">${escapeHtml(platformGlyph(t.platform))}</span>
+      ${pillHtml(t)}
+    </div>
+    <div class="card-identity">
+      <div class="card-platform">${escapeHtml(PLATFORM_LABEL[t.platform])}</div>
+      <div class="card-url">${escapeHtml(t.siteUrl)}</div>
+    </div>
+    <div class="card-divider"></div>
+    <div class="card-status-line ${effectiveStatus.tone}">${
+      transient ? escapeHtml(effectiveStatus.text) : escapeHtml(lastSyncText(t))
+    }</div>
+    <div class="card-actions">
+      ${
+        isConflict
+          ? `<button class="btn-ghost warning" data-action="resolve" ${busy ? 'disabled' : ''}>Resolve conflict</button>`
+          : `
+            <button class="btn-ghost" data-action="pull" ${busy ? 'disabled' : ''}>Pull now</button>
+            <button class="btn-ghost" data-action="push" ${busy ? 'disabled' : ''}>Push now</button>
+          `
+      }
+      <span class="spacer"></span>
+      <button class="auto-toggle ${t.autoSync ? 'on' : ''}" data-action="auto" ${busy ? 'disabled' : ''} title="Auto-sync">
+        <span class="label">Auto</span>
+        <span class="switch"></span>
+      </button>
+      <button class="btn-ghost icon-btn" data-action="more" ${busy ? 'disabled' : ''}>⋯</button>
+    </div>
+  `;
+
+  wireCardActions(card, t);
   return card;
+}
+
+/** Compact one-line list row used by the Connections list view. */
+function renderListRow(t: DashboardTarget): HTMLElement {
+  const row = document.createElement('div');
+  row.className = 'conn-row';
+  row.dataset.id = t.id;
+
+  const transient = transientMessage.get(t.id);
+  const busy = inFlight.has(t.id);
+  const isConflict = t.state === 'conflict';
+
+  row.innerHTML = `
+    <span class="platform-tile sm" data-platform="${t.platform}">${escapeHtml(platformGlyph(t.platform))}</span>
+    <span class="conn-name">${escapeHtml(PLATFORM_LABEL[t.platform])}</span>
+    <span class="conn-url">${escapeHtml(t.siteUrl)}</span>
+    ${pillHtml(t)}
+    <span class="conn-last">${
+      transient ? escapeHtml(transient.text) : escapeHtml(lastSyncText(t))
+    }</span>
+    <span class="conn-actions">
+      ${
+        isConflict
+          ? `<button class="btn-ghost warning" data-action="resolve" ${busy ? 'disabled' : ''}>Resolve</button>`
+          : `
+            <button class="btn-ghost" data-action="pull" ${busy ? 'disabled' : ''}>Pull now</button>
+            <button class="btn-ghost" data-action="push" ${busy ? 'disabled' : ''}>Push now</button>
+          `
+      }
+      <button class="auto-toggle ${t.autoSync ? 'on' : ''}" data-action="auto" ${busy ? 'disabled' : ''} title="Auto-sync">
+        <span class="switch"></span>
+      </button>
+      <button class="btn-ghost icon-btn" data-action="more" ${busy ? 'disabled' : ''}>⋯</button>
+    </span>
+  `;
+
+  wireCardActions(row, t);
+  return row;
 }
 
 // ── Per-card ⋯ menu (Edit / Remove) ────────────────────────────────────────
@@ -207,9 +294,11 @@ function openCardMenu(t: DashboardTarget, anchor: HTMLElement): void {
   // every platform gets a "Choose content…" item.
   const canEdit = t.platform !== 'shopify';
   menu.innerHTML = `
+    <button type="button" data-menu="dry-run">Dry-run…</button>
     ${canEdit ? '<button type="button" data-menu="edit">Edit…</button>' : ''}
+    <button type="button" data-menu="test">Test</button>
     <button type="button" data-menu="kinds">Choose content…</button>
-    <button type="button" data-menu="remove" class="danger">Remove…</button>
+    <button type="button" data-menu="remove" class="danger">Disconnect…</button>
   `;
   const rect = anchor.getBoundingClientRect();
   menu.style.position = 'fixed';
@@ -225,6 +314,8 @@ function openCardMenu(t: DashboardTarget, anchor: HTMLElement): void {
       if (b.dataset.menu === 'edit') void onEditTarget(t);
       else if (b.dataset.menu === 'kinds') void onEditKinds(t);
       else if (b.dataset.menu === 'remove') void onRemoveTarget(t);
+      else if (b.dataset.menu === 'dry-run') void onRunCommand(t, 'dry-run');
+      else if (b.dataset.menu === 'test') void onTestTarget(t);
     });
   });
 }
@@ -309,14 +400,23 @@ async function onEditTarget(t: DashboardTarget): Promise<void> {
   }
 }
 
+// Test a connection without writing anything. The daemon's only per-handle
+// no-write check reachable from the renderer is the dry-run (it computes the
+// sync plan and surfaces connectivity/auth errors in the Preview window without
+// pulling or pushing). Reuses the existing `dashboard:run-command` dry-run path
+// — no new IPC. See spec §5: Dry-run / Test share the no-write surface.
+async function onTestTarget(t: DashboardTarget): Promise<void> {
+  await onRunCommand(t, 'dry-run');
+}
+
 async function onRemoveTarget(t: DashboardTarget): Promise<void> {
   const ok = window.confirm(
-    `Remove "${PLATFORM_LABEL[t.platform]} · ${t.siteUrl}"? Local files in its sync folder are kept; only the connection is removed.`,
+    `Disconnect "${PLATFORM_LABEL[t.platform]} · ${t.siteUrl}"? Local files in its sync folder are kept; only the connection is removed.`,
   );
   if (!ok) return;
   if (inFlight.has(t.id)) return;
   inFlight.add(t.id);
-  setTransient(t.id, 'Removing…');
+  setTransient(t.id, 'Disconnecting…');
   await refresh();
   try {
     const result = await window.api.config.removeTarget(t.id);
@@ -338,15 +438,49 @@ function renderEmpty(): HTMLElement {
   empty.className = 'sync-card empty-state';
   empty.innerHTML = `
     <div class="empty-title">No connected sites yet</div>
-    <div class="empty-body">Use the menu bar to set up your first sync.</div>
+    <div class="empty-body">Use “Add connection” above to connect your first site.</div>
   `;
   return empty;
+}
+
+// ── Connections view mode (grid / list), persisted to localStorage ─────────
+
+type ViewMode = 'grid' | 'list';
+const VIEW_MODE_KEY = 'specter.connections.viewMode';
+
+function readViewMode(): ViewMode {
+  try {
+    return localStorage.getItem(VIEW_MODE_KEY) === 'list' ? 'list' : 'grid';
+  } catch {
+    return 'grid';
+  }
+}
+
+let viewMode: ViewMode = readViewMode();
+
+function setViewMode(mode: ViewMode): void {
+  viewMode = mode;
+  try {
+    localStorage.setItem(VIEW_MODE_KEY, mode);
+  } catch { /* private mode / quota — fall back to in-memory only */ }
+  list.dataset.view = mode;
+  viewToggleBtns.forEach((b) => {
+    const active = b.dataset.view === mode;
+    b.classList.toggle('is-active', active);
+    b.setAttribute('aria-pressed', String(active));
+  });
+  void refresh();
 }
 
 // ── Live data: poll dashboard:fetch every 5s ──────────────────────────────
 
 const list = document.getElementById('card-list')!;
 const targetsTable = document.getElementById('targets-table');
+const viewToggleBtns = document.querySelectorAll<HTMLButtonElement>('.view-toggle-btn');
+
+// Keep the latest snapshot so the Sync Logs view (and re-renders triggered by
+// filter/search changes) can repaint without re-fetching.
+let lastTargets: DashboardTarget[] = [];
 
 async function refresh(): Promise<void> {
   let snapshot: DashboardSnapshot;
@@ -357,14 +491,30 @@ async function refresh(): Promise<void> {
     console.error('[dashboard] fetch failed', e);
     return;
   }
+  lastTargets = snapshot.targets;
+  list.dataset.view = viewMode;
   list.innerHTML = '';
   if (snapshot.targets.length === 0) {
     list.appendChild(renderEmpty());
+  } else if (viewMode === 'list') {
+    snapshot.targets.forEach((t) => list.appendChild(renderListRow(t)));
   } else {
     snapshot.targets.forEach((t) => list.appendChild(renderCard(t)));
   }
   renderTargetsTable(snapshot.targets);
+  renderSyncLogs(snapshot.targets);
 }
+
+viewToggleBtns.forEach((b) => {
+  b.addEventListener('click', () => setViewMode(b.dataset.view === 'list' ? 'list' : 'grid'));
+});
+// Apply persisted choice to the DOM on load (before first refresh paints).
+list.dataset.view = viewMode;
+viewToggleBtns.forEach((b) => {
+  const active = b.dataset.view === viewMode;
+  b.classList.toggle('is-active', active);
+  b.setAttribute('aria-pressed', String(active));
+});
 
 // ── Settings pane: Targets list (spec S6) ──────────────────────────────────
 //
@@ -393,14 +543,16 @@ function renderTargetsTable(targets: DashboardTarget[]): void {
       <span class="tr-kinds">${escapeHtml(kindsSummary(t.contentKinds))}</span>
       <span class="tr-actions">
         ${canEdit ? '<button type="button" class="btn-ghost" data-row="edit">Edit</button>' : ''}
+        <button type="button" class="btn-ghost" data-row="test">Test</button>
         <button type="button" class="btn-ghost" data-row="kinds">Content</button>
-        <button type="button" class="btn-ghost danger" data-row="remove">Remove</button>
+        <button type="button" class="btn-ghost danger" data-row="remove">Disconnect</button>
       </span>
     `;
     row.querySelectorAll<HTMLButtonElement>('[data-row]').forEach((b) => {
       b.addEventListener('click', (ev) => {
         ev.stopPropagation();
         if (b.dataset.row === 'edit') void onEditTarget(t);
+        else if (b.dataset.row === 'test') void onTestTarget(t);
         else if (b.dataset.row === 'kinds') void onEditKinds(t);
         else if (b.dataset.row === 'remove') void onRemoveTarget(t);
       });
@@ -408,6 +560,112 @@ function renderTargetsTable(targets: DashboardTarget[]): void {
     targetsTable.appendChild(row);
   });
 }
+
+// ── Sync Logs view (formerly Activity) ─────────────────────────────────────
+//
+// Spec §5 / §10: render per-target last-sync state in the mockup's event-table
+// shape — Platform · Status · Description · Timestamp — with platform filter
+// chips + a client-side search box. This is NOT a rolling event feed (deferred
+// to its own spec); it's one row per target's current last-sync snapshot.
+
+const logsTable = document.getElementById('logs-table');
+const logsSearchEl = document.getElementById('logs-search') as HTMLInputElement | null;
+const logsFilterBtns = document.querySelectorAll<HTMLButtonElement>('.filter-chip');
+
+let logsPlatformFilter: 'all' | Platform = 'all';
+let logsSearch = '';
+
+/** Human description of a target's current sync state, for the log row. */
+function logDescription(t: DashboardTarget): string {
+  switch (t.state) {
+    case 'syncing':
+      return 'Sync in progress';
+    case 'conflict': {
+      const n = t.conflictCount ?? 1;
+      return `${n} conflict${n === 1 ? '' : 's'} — resolve to continue`;
+    }
+    case 'error':
+      return 'Last sync failed';
+    case 'disconnected':
+      return 'Not connected';
+    case 'idle':
+      return t.lastSyncedRelative ? 'Synced successfully' : 'No sync yet';
+  }
+}
+
+function logsEmpty(message: string): HTMLElement {
+  const empty = document.createElement('div');
+  empty.className = 'logs-empty';
+  empty.textContent = message;
+  return empty;
+}
+
+function renderSyncLogs(targets: DashboardTarget[]): void {
+  if (!logsTable) return;
+  logsTable.innerHTML = '';
+
+  if (targets.length === 0) {
+    logsTable.appendChild(logsEmpty('No sync activity yet. Connect a site to see its sync log here.'));
+    return;
+  }
+
+  const needle = logsSearch.trim().toLowerCase();
+  const rows = targets.filter((t) => {
+    if (logsPlatformFilter !== 'all' && t.platform !== logsPlatformFilter) return false;
+    if (!needle) return true;
+    const hay = `${PLATFORM_LABEL[t.platform]} ${t.siteUrl} ${logDescription(t)} ${statusPill(t).label}`.toLowerCase();
+    return hay.includes(needle);
+  });
+
+  // Column headers (uppercase, letter-spaced).
+  const header = document.createElement('div');
+  header.className = 'logs-row logs-head';
+  header.innerHTML = `
+    <span>Platform</span>
+    <span>Status</span>
+    <span>Description</span>
+    <span>Timestamp</span>
+  `;
+  logsTable.appendChild(header);
+
+  if (rows.length === 0) {
+    logsTable.appendChild(logsEmpty('No logs match the current filter.'));
+    return;
+  }
+
+  rows.forEach((t) => {
+    const row = document.createElement('div');
+    row.className = 'logs-row';
+    const ts = t.state === 'syncing' ? 'now' : (t.lastSyncedRelative ?? '—');
+    row.innerHTML = `
+      <span class="logs-platform">
+        <span class="platform-tile sm" data-platform="${t.platform}">${escapeHtml(platformGlyph(t.platform))}</span>
+        ${escapeHtml(PLATFORM_LABEL[t.platform])}
+      </span>
+      <span>${pillHtml(t)}</span>
+      <span class="logs-desc">${escapeHtml(logDescription(t))} · ${escapeHtml(t.siteUrl)}</span>
+      <span class="logs-ts">${escapeHtml(ts)}</span>
+    `;
+    logsTable.appendChild(row);
+  });
+}
+
+logsFilterBtns.forEach((b) => {
+  b.addEventListener('click', () => {
+    logsPlatformFilter = (b.dataset.platform as 'all' | Platform) ?? 'all';
+    logsFilterBtns.forEach((x) => {
+      const active = x === b;
+      x.classList.toggle('is-active', active);
+      x.setAttribute('aria-pressed', String(active));
+    });
+    renderSyncLogs(lastTargets);
+  });
+});
+
+logsSearchEl?.addEventListener('input', () => {
+  logsSearch = logsSearchEl.value;
+  renderSyncLogs(lastTargets);
+});
 
 // ── Action handlers ───────────────────────────────────────────────────────
 //
@@ -495,9 +753,9 @@ window.addEventListener('beforeunload', () => {
 
 // ── "+ Add target" dropdown ──────────────────────────────────────────────
 //
-// The dropdown surfaces a per-platform router: Ghost opens the legacy
-// Settings (or onboarding when no config exists), Shopify shells out to the
-// public connect funnel, WordPress opens the local connect window.
+// The dropdown surfaces a per-platform router: Ghost/WordPress/Webflow open
+// their dedicated connect windows (each new site gets its own handle + folder),
+// Shopify shells out to the hosted connect funnel.
 
 const addBtn = document.getElementById('btn-add-target') as HTMLButtonElement | null;
 const addMenu = document.getElementById('add-target-menu') as HTMLElement | null;
@@ -532,6 +790,207 @@ if (addBtn && addMenu) {
     });
   });
 }
+
+// ── Settings pane: global preferences ──────────────────────────────────────
+//
+// The dashboard Settings pane is the single home for global prefs (spec
+// tasks/spec-app-redesign-ux-overhaul.md §5), folded out of the retired
+// standalone Settings window. Per-connection sync settings live on the cards,
+// NOT here — nothing in this pane names a specific connection.
+
+const setFolderPathEl = document.getElementById('set-folder-path');
+const setPickFolderBtn = document.getElementById('set-pick-folder') as HTMLButtonElement | null;
+const setAutolaunchBtn = document.getElementById('set-autolaunch') as HTMLButtonElement | null;
+const setGlobalsStatusEl = document.getElementById('set-globals-status');
+const setLicenseSection = document.getElementById('set-license-section');
+const setOauthBaseEl = document.getElementById('set-oauth-base') as HTMLInputElement | null;
+const setOauthSaveBtn = document.getElementById('set-oauth-save') as HTMLButtonElement | null;
+const setOpenFolderBtn = document.getElementById('set-open-folder') as HTMLButtonElement | null;
+const setViewLogsBtn = document.getElementById('set-view-logs') as HTMLButtonElement | null;
+
+function showGlobalsStatus(text: string, tone: 'ok' | 'error' = 'ok'): void {
+  if (!setGlobalsStatusEl) return;
+  setGlobalsStatusEl.textContent = text;
+  setGlobalsStatusEl.className = `settings-status ${tone}`;
+  setTimeout(() => {
+    setGlobalsStatusEl.className = 'settings-status hidden';
+  }, 2500);
+}
+
+async function loadSettingsGlobals(): Promise<void> {
+  const cfg = await window.api.config.read();
+  if (setFolderPathEl) {
+    const folder = cfg?.vaultPath
+      ? cfg.syncFolderPath
+        ? `${cfg.vaultPath}/${cfg.syncFolderPath}`
+        : cfg.vaultPath
+      : 'No folder chosen';
+    setFolderPathEl.textContent = folder;
+  }
+  if (setOauthBaseEl) setOauthBaseEl.value = cfg?.oauthBaseUrl ?? '';
+
+  // Launch-at-login reflects the OS login-item state, not config.
+  if (setAutolaunchBtn) {
+    try {
+      const enabled = await window.api.autolaunch.get();
+      setAutolaunchBtn.classList.toggle('on', enabled);
+      setAutolaunchBtn.setAttribute('aria-pressed', String(enabled));
+    } catch { /* leave default off */ }
+  }
+}
+
+setPickFolderBtn?.addEventListener('click', async () => {
+  const picked = await window.api.dialog.pickFolder();
+  if (!picked) return;
+  setPickFolderBtn.disabled = true;
+  try {
+    // Picking a new vault root resets the legacy syncFolderPath implicitly —
+    // writeGlobals only touches vaultPath, and per-connection folders are
+    // derived from each target's handle.
+    const res = await window.api.config.writeGlobals({ vaultPath: picked });
+    if (res.ok) {
+      showGlobalsStatus('Folder updated');
+      await loadSettingsGlobals();
+      await refresh();
+    } else {
+      showGlobalsStatus(res.error ?? 'Failed to save folder', 'error');
+    }
+  } finally {
+    setPickFolderBtn.disabled = false;
+  }
+});
+
+setAutolaunchBtn?.addEventListener('click', async () => {
+  const next = !setAutolaunchBtn.classList.contains('on');
+  setAutolaunchBtn.classList.toggle('on', next);
+  setAutolaunchBtn.setAttribute('aria-pressed', String(next));
+  const res = await window.api.autolaunch.set(next);
+  if (!res.ok) {
+    // Revert the optimistic flip on failure.
+    setAutolaunchBtn.classList.toggle('on', !next);
+    setAutolaunchBtn.setAttribute('aria-pressed', String(!next));
+    showGlobalsStatus(res.error ?? 'Failed to update launch setting', 'error');
+  }
+});
+
+setOauthSaveBtn?.addEventListener('click', async () => {
+  if (!setOauthBaseEl) return;
+  setOauthSaveBtn.disabled = true;
+  try {
+    const res = await window.api.config.writeGlobals({ oauthBaseUrl: setOauthBaseEl.value });
+    showGlobalsStatus(res.ok ? 'OAuth server saved' : (res.error ?? 'Failed to save'), res.ok ? 'ok' : 'error');
+  } finally {
+    setOauthSaveBtn.disabled = false;
+  }
+});
+
+setOpenFolderBtn?.addEventListener('click', () => {
+  void window.api.shell.openSyncFolder();
+});
+
+setViewLogsBtn?.addEventListener('click', () => {
+  void window.api.shell.openLogs();
+});
+
+// ── Settings pane: License (moved from the standalone settings renderer) ────
+
+interface SettingsLicenseStatus {
+  tier?: string;
+  key?: string;
+  syncCount?: number;
+  freeLimit?: number;
+  lastValidatedAt?: string;
+  error?: string;
+}
+
+async function loadLicenseSection(): Promise<void> {
+  if (!setLicenseSection) return;
+  setLicenseSection.innerHTML = `<p class="ds-muted">Loading license…</p>`;
+  try {
+    const res = (await window.api.license.status()) as unknown as SettingsLicenseStatus;
+    renderLicenseSection(res);
+  } catch {
+    setLicenseSection.innerHTML = `<p class="settings-status error">Failed to load license status.</p>`;
+  }
+}
+
+function renderLicenseSection(status: SettingsLicenseStatus): void {
+  if (!setLicenseSection) return;
+  if (status.error || status.tier === undefined) {
+    setLicenseSection.innerHTML = `<p class="settings-status error">${escapeHtml(status.error ?? 'Unknown error')}</p>`;
+    return;
+  }
+
+  if (status.tier === 'pro') {
+    setLicenseSection.innerHTML = `
+      <div class="license-pro">
+        <div class="settings-row">
+          <div class="settings-row-label">
+            <div class="settings-row-name">Specter Pro active</div>
+            <div class="settings-row-help">Key: ${escapeHtml(status.key ?? '—')}${
+              status.lastValidatedAt ? ` · validated ${escapeHtml(status.lastValidatedAt)}` : ''
+            }</div>
+            <div class="settings-row-help">${status.syncCount ?? 0} uploads this month (no limit)</div>
+          </div>
+          <button class="btn-ghost danger" id="set-deactivate">Deactivate</button>
+        </div>
+      </div>
+    `;
+    document.getElementById('set-deactivate')?.addEventListener('click', async () => {
+      const btn = document.getElementById('set-deactivate') as HTMLButtonElement;
+      btn.disabled = true;
+      const res = await window.api.license.deactivate();
+      if (res.ok) {
+        await loadLicenseSection();
+      } else {
+        btn.disabled = false;
+        showGlobalsStatus(res.error ?? 'Deactivation failed', 'error');
+      }
+    });
+  } else {
+    setLicenseSection.innerHTML = `
+      <div class="license-free">
+        <p class="ds-muted">Activate Specter Pro to upload changes.</p>
+        <div class="settings-field-row">
+          <input type="password" id="set-license-key" placeholder="XXXX-XXXX-XXXX-XXXX" />
+          <button class="btn-primary" id="set-activate-btn" disabled>Activate</button>
+        </div>
+        <div id="set-activate-error" class="settings-status error hidden"></div>
+        <p class="settings-row-help">
+          <a href="https://spectersync.com/#buy" data-external class="ds-link">Subscribe — $99/year</a>
+        </p>
+      </div>
+    `;
+    const keyInput = document.getElementById('set-license-key') as HTMLInputElement;
+    const activateBtn = document.getElementById('set-activate-btn') as HTMLButtonElement;
+    const activateErr = document.getElementById('set-activate-error')!;
+
+    keyInput.addEventListener('input', () => {
+      activateBtn.disabled = !keyInput.value.trim();
+    });
+    activateBtn.addEventListener('click', async () => {
+      activateBtn.disabled = true;
+      activateErr.className = 'settings-status error hidden';
+      const res = await window.api.license.activate(keyInput.value.trim());
+      if (res.ok) {
+        await loadLicenseSection();
+      } else {
+        activateErr.textContent = res.error ?? 'Activation failed.';
+        activateErr.className = 'settings-status error';
+        activateBtn.disabled = false;
+      }
+    });
+    setLicenseSection
+      .querySelector<HTMLAnchorElement>('a[data-external]')
+      ?.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        void window.api.shell.openExternal('https://spectersync.com/#buy');
+      });
+  }
+}
+
+void loadSettingsGlobals();
+void loadLicenseSection();
 
 // Make this file an ES module so its top-level identifiers don't pollute the
 // global scope across renderer windows.

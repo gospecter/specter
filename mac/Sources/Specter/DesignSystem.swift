@@ -10,39 +10,40 @@ import SwiftUI
 enum DS {
 
     // MARK: Surfaces (tonal layering — no shadows)
+    // Tokens match the dark-dashboard mockup: near-black-green base, blue accent.
     enum Surface {
-        static let base       = Color(hex: 0x111416)
-        static let panel      = Color(hex: 0x1D2022)
-        static let elevated   = Color(hex: 0x232629)
+        static let base       = Color(hex: 0x020A07)
+        static let panel      = Color(hex: 0x1B221F)
+        static let elevated   = Color(hex: 0x242C28)
         static let input      = Color(hex: 0x0C0F10)
         static let hover      = Color.white.opacity(0.04)
         static let pressed    = Color.white.opacity(0.08)
-        static let borderSubtle = Color(hex: 0x34393E)
-        static let borderStrong = Color(hex: 0x484553)
+        static let borderSubtle = Color(hex: 0x2D3632)
+        static let borderStrong = Color(hex: 0x3C463F)
     }
 
     // MARK: Text
     enum Text {
-        static let primary     = Color(hex: 0xE1E2E5)
-        static let muted       = Color(hex: 0xCAC4D5)
-        static let outline     = Color(hex: 0x938E9E)
-        static let onPrimary   = Color(hex: 0xEFE8FF)
+        static let primary     = Color(hex: 0xFFFFFF)
+        static let muted       = Color(hex: 0xA1ADA8)
+        static let outline     = Color(hex: 0x6E7B75)
+        static let onPrimary   = Color(hex: 0xFFFFFF)
     }
 
-    // MARK: Accent
+    // MARK: Accent (Blue Ribbon #0A66FF)
     enum Accent {
-        static let primary     = Color(hex: 0x6E56CF)
-        static let onDark      = Color(hex: 0xCBBEFF)
-        static let fixed       = Color(hex: 0x4A2EA9)
-        static let soft        = Color(hex: 0x6E56CF).opacity(0.16)
+        static let primary     = Color(hex: 0x0A66FF)
+        static let onDark      = Color(hex: 0x8FBEFF)
+        static let fixed       = Color(hex: 0x0A4FCC)
+        static let soft        = Color(hex: 0x0A66FF).opacity(0.15)
         static let tertiary    = Color(hex: 0xFFB964)
     }
 
     // MARK: Status
     enum Status {
-        static let success = Color(hex: 0x30A46C)
-        static let warning = Color(hex: 0xFFB224)
-        static let error   = Color(hex: 0xE54D2E)
+        static let success = Color(hex: 0x23C48E)
+        static let warning = Color(hex: 0xFF6B35)
+        static let error   = Color(hex: 0xFF6B35)
     }
 
     // MARK: Typography
@@ -255,34 +256,43 @@ struct DSStatusDot: View {
 struct DSPill: View {
     var text: String
     var tone: Tone = .neutral
+    /// Leading status dot (mockup status pills). Off by default.
+    var dot: Bool = false
 
     enum Tone { case neutral, success, warning, error, accent }
 
     var body: some View {
-        Text(text)
-            .font(DS.Typography.labelSm())
-            .foregroundStyle(fg)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(bg, in: Capsule())
-            .overlay(Capsule().strokeBorder(stroke, lineWidth: 1))
+        HStack(spacing: 5) {
+            if dot {
+                Circle().fill(fg).frame(width: 5, height: 5)
+            }
+            Text(text)
+                .font(DS.Typography.labelSm())
+                .foregroundStyle(fg)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(bg, in: Capsule())
+        .overlay(Capsule().strokeBorder(stroke, lineWidth: 1))
     }
 
+    // Mockup pill style: tinted background (~12% of the tone) + tone-colored
+    // text, not a solid fill. Neutral keeps a hairline border.
     private var bg: Color {
         switch tone {
-        case .success: return DS.Status.success
-        case .warning: return DS.Status.warning.opacity(0.18)
-        case .error:   return DS.Status.error.opacity(0.18)
+        case .success: return DS.Status.success.opacity(0.12)
+        case .warning: return DS.Status.warning.opacity(0.12)
+        case .error:   return DS.Status.error.opacity(0.12)
         case .accent:  return DS.Accent.soft
         case .neutral: return DS.Surface.elevated
         }
     }
     private var fg: Color {
         switch tone {
-        case .success: return Color(hex: 0x06231A)
+        case .success: return DS.Status.success
         case .warning: return DS.Status.warning
         case .error:   return DS.Status.error
-        case .accent:  return DS.Accent.onDark
+        case .accent:  return DS.Accent.primary
         case .neutral: return DS.Text.muted
         }
     }

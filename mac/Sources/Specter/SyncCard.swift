@@ -39,76 +39,80 @@ struct SyncCard: View {
     var onAutoSyncChange: (Bool) -> Void = { _ in }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Top row: status dot + platform + url ........ Auto toggle
-            HStack(spacing: 12) {
-                DSStatusDot(tone: statusTone)
-                Text(target.platform.displayName)
-                    .font(DS.Typography.headlineSm())
-                    .foregroundStyle(DS.Text.primary)
-                Text(target.siteUrl)
-                    .font(DS.Typography.labelMd())
-                    .foregroundStyle(DS.Text.outline)
+        VStack(alignment: .leading, spacing: 0) {
+            // Top row: platform icon tile ........ status pill
+            HStack(alignment: .top) {
+                PlatformIconTile(systemName: target.platformIcon, size: 44)
                 Spacer()
-                AutoSyncToggle(isOn: Binding(
-                    get: { target.autoSync },
-                    set: { newValue in
-                        target.autoSync = newValue
-                        onAutoSyncChange(newValue)
-                    }
-                ))
+                DSPill(text: target.pill.text, tone: target.pill.tone, dot: true)
             }
 
-            // Status line
-            HStack(spacing: 6) {
-                Text(statusLabel)
-                    .font(DS.Typography.labelMd())
-                    .foregroundStyle(statusTextColor)
-                if let last = target.lastSyncedRelative,
-                   target.state != .conflict, target.state != .error {
-                    Text("·")
-                        .foregroundStyle(DS.Text.outline)
-                    Text(last)
-                        .font(DS.Typography.labelMd())
-                        .foregroundStyle(DS.Text.outline)
-                }
+            // Title + label
+            VStack(alignment: .leading, spacing: 2) {
+                Text(target.platform.displayName)
+                    .font(DS.Typography.headlineMd())
+                    .foregroundStyle(DS.Text.primary)
+                Text(target.subtitle)
+                    .font(DS.Typography.bodyMd())
+                    .foregroundStyle(DS.Text.muted)
             }
-
-            // Summary line
-            Text(target.summary)
-                .font(DS.Typography.bodyMd())
-                .foregroundStyle(DS.Text.muted)
+            .padding(.top, 16)
 
             // Content-kind line — what this target actually syncs.
             Text(ContentKinds.summary(target.contentKinds))
                 .font(DS.Typography.labelSm())
                 .foregroundStyle(target.contentKinds.isEmpty ? DS.Status.warning : DS.Text.outline)
+                .padding(.top, 6)
 
-            // Actions
-            HStack(spacing: 8) {
-                if target.state == .conflict {
-                    Button("Resolve conflict", action: onResolveConflict)
-                        .buttonStyle(DSGhostButtonStyle(tone: DS.Status.warning))
-                    Spacer()
-                    moreMenu
-                } else {
-                    Button("Pull",   action: onPull).buttonStyle(DSGhostButtonStyle())
-                    Button("Push",   action: onPush).buttonStyle(DSGhostButtonStyle())
-                    Button("Dry-run", action: onDryRun)
-                        .buttonStyle(DSGhostButtonStyle(dashed: true))
-                    Spacer()
-                    moreMenu
+            // Divider
+            Rectangle()
+                .fill(DS.Surface.borderSubtle)
+                .frame(height: 1)
+                .padding(.vertical, 16)
+
+            // Footer: last sync (left) ........ actions (right)
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("LAST SYNC")
+                        .font(DS.Typography.labelSm())
+                        .foregroundStyle(DS.Text.outline)
+                    Text(target.lastSyncText)
+                        .font(DS.Typography.bodyMd())
+                        .foregroundStyle(DS.Text.primary)
                 }
+                Spacer()
+                actions
             }
         }
-        .dsCard()
+        .dsCard(padding: 24)
     }
 
-    /// Per-card overflow menu: Edit (reopen the platform connect form
-    /// pre-filled), Test connection, and Disconnect (remove from config;
-    /// vault files left in place).
+    @ViewBuilder
+    private var actions: some View {
+        if target.state == .conflict {
+            Button("Resolve conflict", action: onResolveConflict)
+                .buttonStyle(DSGhostButtonStyle(tone: DS.Status.warning))
+            moreMenu
+        } else {
+            AutoSyncToggle(isOn: Binding(
+                get: { target.autoSync },
+                set: { newValue in
+                    target.autoSync = newValue
+                    onAutoSyncChange(newValue)
+                }
+            ))
+            Button("Pull now", action: onPull).buttonStyle(DSGhostButtonStyle())
+            Button("Push now", action: onPush).buttonStyle(DSGhostButtonStyle())
+            moreMenu
+        }
+    }
+
+    /// Per-card overflow menu: Dry-run preview, Edit (reopen the platform
+    /// connect form pre-filled, which includes content-kind selection), Test
+    /// connection, and Disconnect (remove from config; vault files left in place).
     private var moreMenu: some View {
         Menu {
+            Button("Dry-run preview…", action: onDryRun)
             Button("Edit…", action: onEdit)
             Button("Test connection", action: onTest)
             Divider()
@@ -121,35 +125,134 @@ struct SyncCard: View {
         .fixedSize()
     }
 
-    // MARK: Helpers
+}
 
-    private var statusTone: DSStatusDot.Tone {
-        switch target.state {
-        case .idle, .syncing: return .success
-        case .conflict:       return .warning
-        case .error:          return .error
-        case .disconnected:   return .idle
-        }
+// MARK: - Shared display helpers
+
+extension SyncTarget {
+    var subtitle: String {
+        label.isEmpty ? siteUrl : label
     }
 
-    private var statusLabel: String {
-        switch target.state {
-        case .idle:         return "Synced"
-        case .syncing:      return "Syncing…"
-        case .conflict:     return target.conflictCount == 1
-            ? "1 conflict · resolve to continue"
-            : "\(target.conflictCount) conflicts · resolve to continue"
+    var lastSyncText: String {
+        switch state {
         case .error:        return "Sync failed"
-        case .disconnected: return "Disconnected"
+        case .disconnected: return "Not connected"
+        default:            return lastSyncedRelative ?? "Not synced yet"
         }
     }
 
-    private var statusTextColor: Color {
-        switch target.state {
-        case .idle, .syncing, .disconnected: return DS.Text.muted
-        case .conflict:                       return DS.Status.warning
-        case .error:                          return DS.Status.error
+    var platformIcon: String {
+        switch platform {
+        case .ghost:     return "doc.text"
+        case .shopify:   return "bag"
+        case .wordpress: return "globe"
+        case .webflow:   return "square.grid.2x2"
         }
+    }
+
+    /// Status pill text + tone, mapped to the mockup vocabulary.
+    var pill: (text: String, tone: DSPill.Tone) {
+        switch state {
+        case .error:        return ("ERROR", .error)
+        case .conflict:
+            return (conflictCount <= 1 ? "CONFLICT" : "\(conflictCount) CONFLICTS", .warning)
+        case .syncing:      return ("INITIALIZING", .accent)
+        case .disconnected: return ("DISCONNECTED", .neutral)
+        case .idle:         return autoSync ? ("ACTIVE SYNCING", .accent) : ("PAUSED", .neutral)
+        }
+    }
+}
+
+/// Platform glyph in a rounded tile, matching the mockup's icon chip.
+/// Shared by the grid card and the compact list row.
+struct PlatformIconTile: View {
+    let systemName: String
+    var size: CGFloat = 44
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: DS.Radius.base)
+            .fill(DS.Surface.base)
+            .frame(width: size, height: size)
+            .overlay(
+                RoundedRectangle(cornerRadius: DS.Radius.base)
+                    .strokeBorder(DS.Surface.borderSubtle, lineWidth: 1)
+            )
+            .overlay(
+                Image(systemName: systemName)
+                    .font(.system(size: size * 0.4, weight: .medium))
+                    .foregroundStyle(DS.Accent.primary)
+            )
+    }
+}
+
+/// Compact one-line variant of `SyncCard` for the Connections "list" layout.
+/// Same data + closures, denser presentation.
+struct SyncCardRow: View {
+    @Binding var target: SyncTarget
+
+    var onPull: () -> Void = {}
+    var onPush: () -> Void = {}
+    var onDryRun: () -> Void = {}
+    var onEdit: () -> Void = {}
+    var onTest: () -> Void = {}
+    var onRemove: () -> Void = {}
+    var onResolveConflict: () -> Void = {}
+    var onAutoSyncChange: (Bool) -> Void = { _ in }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            PlatformIconTile(systemName: target.platformIcon, size: 32)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(target.platform.displayName)
+                    .font(DS.Typography.headlineSm())
+                    .foregroundStyle(DS.Text.primary)
+                Text(target.subtitle)
+                    .font(DS.Typography.bodySm())
+                    .foregroundStyle(DS.Text.muted)
+                    .lineLimit(1)
+            }
+            .frame(minWidth: 120, alignment: .leading)
+
+            DSPill(text: target.pill.text, tone: target.pill.tone, dot: true)
+
+            Spacer()
+
+            Text(target.lastSyncText)
+                .font(DS.Typography.bodySm())
+                .foregroundStyle(DS.Text.outline)
+                .lineLimit(1)
+
+            if target.state == .conflict {
+                Button("Resolve", action: onResolveConflict)
+                    .buttonStyle(DSGhostButtonStyle(tone: DS.Status.warning))
+            } else {
+                AutoSyncToggle(isOn: Binding(
+                    get: { target.autoSync },
+                    set: { newValue in
+                        target.autoSync = newValue
+                        onAutoSyncChange(newValue)
+                    }
+                ))
+                Button("Pull", action: onPull).buttonStyle(DSGhostButtonStyle())
+                Button("Push", action: onPush).buttonStyle(DSGhostButtonStyle())
+            }
+
+            Menu {
+                Button("Dry-run preview…", action: onDryRun)
+                Button("Edit…", action: onEdit)
+                Button("Test connection", action: onTest)
+                Divider()
+                Button("Disconnect…", role: .destructive, action: onRemove)
+            } label: {
+                Image(systemName: "ellipsis")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+        }
+        .dsCard(padding: 12)
     }
 }
 

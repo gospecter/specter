@@ -20,10 +20,9 @@ export async function statusCommand(): Promise<void> {
   console.log(`Vault root:    ${config.vaultPath}`);
   console.log(`Targets:       ${config.targets.length}`);
 
-  const isMulti = config.targets.length > 1;
   for (const t of config.targets) {
     const ts = state.targets?.[t.handle];
-    const root = effectiveRoot(t, isMulti) || '<vault root>';
+    const root = effectiveRoot(t);
     console.log('');
     console.log(`▸ ${t.handle}  [${t.adapter.platform}]  "${t.label}"`);
     console.log(`    Folder:      ${root}`);

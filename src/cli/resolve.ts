@@ -35,7 +35,7 @@ export async function resolveCommand(options: ResolveOptions): Promise<void> {
 
   const vault = new Vault(config.vaultPath);
   const adapter = createAdapter(target.adapter);
-  const settings = targetSyncSettings(target, config.targets.length > 1);
+  const settings = targetSyncSettings(target);
   const engine = new SyncEngine(vault, adapter, settings);
   const resolution: ConflictResolution = options.keep === 'local' ? 'keep_local' : 'keep_remote';
 

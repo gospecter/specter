@@ -456,7 +456,6 @@ struct MenuView: View {
     @ObservedObject var supervisor: DaemonSupervisor
     @ObservedObject var license: LicenseController
     @ObservedObject var updater: UpdaterController
-    @ObservedObject var preview: PreviewController
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -501,73 +500,16 @@ struct MenuView: View {
 
         Divider()
 
-        Button { MenuActions.run("sync", store: store) } label: {
-            Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
-        }
-        Button { MenuActions.run("pull", store: store) } label: {
-            Label("Pull from CMS", systemImage: "icloud.and.arrow.down")
-        }
-        Button { MenuActions.run("push", store: store) } label: {
-            Label("Push to CMS", systemImage: "icloud.and.arrow.up")
-        }
-        Button {
-            preview.configure(targetHandle: nil)
-            NSApplication.shared.setActivationPolicy(.regular)
-            NSApplication.shared.activate(ignoringOtherApps: true)
-            openWindow(id: "preview")
-        } label: {
-            Label("Preview Sync…", systemImage: "eye")
-        }
-
-        Divider()
-
+        // The menu bar is a status surface only. All controls — sync actions,
+        // preferences, launch-at-login, folder/logs, Pro upgrade — live in the
+        // dashboard window now (see DashboardView). Keeping the menu to
+        // "open the app / update / quit" was explicit user feedback.
         Button {
             NSApplication.shared.setActivationPolicy(.regular)
             NSApplication.shared.activate(ignoringOtherApps: true)
-            openWindow(id: "dashboard")
+            openWindow(id: ConfigStore.exists ? "dashboard" : "onboarding")
         } label: {
             Label("Open Specter…", systemImage: "square.stack.3d.up")
-        }
-
-        Button {
-            // Bring the app forward so the Window is allowed to show
-            // (LSUIElement apps can't show windows from background).
-            NSApplication.shared.setActivationPolicy(.regular)
-            NSApplication.shared.activate(ignoringOtherApps: true)
-            openWindow(id: ConfigStore.exists ? "settings" : "onboarding")
-        } label: {
-            Label("Preferences…", systemImage: "gearshape")
-        }
-
-        Button {
-            LoginItem.toggle()
-        } label: {
-            Label(LoginItem.isEnabled ? "Disable Launch at Login" : "Launch at Login",
-                  systemImage: LoginItem.isEnabled ? "checkmark" : "power")
-        }
-
-        // Buy Pro shortcut, only when not activated.
-        if license.isFree, case .loaded = license.state {
-            Divider()
-            Button {
-                NSWorkspace.shared.open(MenuActions.buyProURL)
-            } label: {
-                Label(
-                    "Subscribe to Specter Pro",
-                    systemImage: "cart"
-                )
-            }
-        }
-
-        Divider()
-
-        if let folder = syncFolderURL {
-            Button { NSWorkspace.shared.open(folder) } label: {
-                Label("Open Sync Folder", systemImage: "folder")
-            }
-        }
-        Button { NSWorkspace.shared.open(Paths.logPath) } label: {
-            Label("View Logs", systemImage: "doc.text")
         }
 
         Button {
@@ -603,14 +545,6 @@ struct MenuView: View {
         }
     }
 
-    private var syncFolderURL: URL? {
-        guard let cfg = ConfigStore.load(), !cfg.vaultPath.isEmpty else { return nil }
-        if cfg.syncFolderPath.isEmpty {
-            return URL(fileURLWithPath: cfg.vaultPath)
-        }
-        return URL(fileURLWithPath: cfg.vaultPath).appending(path: cfg.syncFolderPath)
-    }
-
     private var isManualMode: Bool {
         ConfigStore.load()?.syncMode == "manual"
     }
@@ -644,7 +578,6 @@ struct SpecterApp: App {
     @StateObject private var store = StatusStore()
     @StateObject private var supervisor = DaemonSupervisor()
     @StateObject private var onboarding = OnboardingController()
-    @StateObject private var settings = SettingsController()
     @StateObject private var preview = PreviewController()
     @StateObject private var license = LicenseController()
     @StateObject private var updater = UpdaterController()
@@ -662,7 +595,7 @@ struct SpecterApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuView(store: store, supervisor: supervisor, license: license, updater: updater, preview: preview)
+            MenuView(store: store, supervisor: supervisor, license: license, updater: updater)
         } label: {
             // Label is rendered eagerly at app launch; menu content is lazy.
             // Bootstrap here so the daemon starts before the user opens the
@@ -747,7 +680,7 @@ struct SpecterApp: App {
         .handlesExternalEvents(matching: ["preview"])
 
         Window("Specter", id: "dashboard") {
-            DashboardView(controller: dashboard, preview: preview)
+            DashboardView(controller: dashboard, preview: preview, license: license)
                 .onAppear {
                     // Belt-and-suspenders configure: also wired on the
                     // MenuBarExtra label's .onAppear, but that lifecycle is
@@ -888,33 +821,7 @@ struct SpecterApp: App {
         .commandsRemoved()
         .handlesExternalEvents(matching: ["shopify-connect"])
 
-        Window("Specter Settings", id: "settings") {
-            SettingsView(controller: settings, license: license) {
-                supervisor.restart()
-                store.reload()
-                license.refresh()
-                if let window = NSApplication.shared.windows.first(where: { $0.title == "Specter Settings" }) {
-                    window.close()
-                }
-                NSApplication.shared.setActivationPolicy(.accessory)
-            } onCancel: {
-                if let window = NSApplication.shared.windows.first(where: { $0.title == "Specter Settings" }) {
-                    window.close()
-                }
-                NSApplication.shared.setActivationPolicy(.accessory)
-            }
-            .onAppear {
-                settings.preload()
-                license.refresh()
-                NSApplication.shared.setActivationPolicy(.regular)
-                NSApplication.shared.activate(ignoringOtherApps: true)
-            }
-            .onDisappear {
-                NSApplication.shared.setActivationPolicy(.accessory)
-            }
-        }
-        .windowResizability(.contentSize)
-        .commandsRemoved()
-        .handlesExternalEvents(matching: ["settings"])
+        // The standalone Settings window is retired — preferences now live in
+        // the dashboard's Settings pane (DashboardView → SettingsPane).
     }
 }

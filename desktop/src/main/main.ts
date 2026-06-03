@@ -3,7 +3,9 @@
  *
  * - Creates the system tray icon + menu.
  * - Spawns the sync daemon child process via DaemonSupervisor.
- * - Wires BrowserWindow instances for Settings, Onboarding, Preview.
+ * - Wires BrowserWindow instances for Onboarding, Preview, Dashboard, and the
+ *   per-platform connect windows. (The standalone Settings window was retired —
+ *   global preferences now live in the dashboard's Settings pane.)
  * - Initialises electron-updater.
  * - Registers IPC handlers.
  *
@@ -38,7 +40,6 @@ if (!gotLock) {
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const supervisor = new DaemonSupervisor();
-let settingsWin: BrowserWindow | null = null;
 let onboardingWin: BrowserWindow | null = null;
 let previewWin: BrowserWindow | null = null;
 let dashboardWin: BrowserWindow | null = null;
@@ -72,7 +73,9 @@ app.whenReady().then(() => {
   }
 
   // Register window openers before creating the tray (tray calls openWindow).
-  registerWindowOpener('settings', openSettingsWindow);
+  // Note: the standalone Settings window is retired — preferences live in the
+  // dashboard's Settings pane. Any old "settings" route now opens the dashboard.
+  registerWindowOpener('settings', openDashboardWindow);
   registerWindowOpener('onboarding', openOnboardingWindow);
   registerWindowOpener('preview', openPreviewWindow);
   registerWindowOpener('dashboard', openDashboardWindow);
@@ -150,19 +153,6 @@ function makeWindow(
 }
 
 // ── Window openers ────────────────────────────────────────────────────────────
-
-function openSettingsWindow(): void {
-  if (settingsWin && !settingsWin.isDestroyed()) {
-    settingsWin.show();
-    settingsWin.focus();
-    return;
-  }
-  // Matches Swift settings window: 620×560
-  settingsWin = makeWindow('settings', 620, 560);
-  settingsWin.on('closed', () => {
-    settingsWin = null;
-  });
-}
 
 function openOnboardingWindow(): void {
   if (onboardingWin && !onboardingWin.isDestroyed()) {

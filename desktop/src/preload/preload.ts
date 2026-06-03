@@ -115,6 +115,8 @@ const api = {
       ipcRenderer.invoke('config:read'),
     write: (cfg: AppConfig): Promise<ApiResult> =>
       ipcRenderer.invoke('config:write', cfg),
+    writeGlobals: (patch: { vaultPath?: string; oauthBaseUrl?: string }): Promise<ApiResult> =>
+      ipcRenderer.invoke('config:write-globals', patch),
     exists: (): Promise<boolean> =>
       ipcRenderer.invoke('config:exists'),
     setTargetSyncMode: (
@@ -208,6 +210,12 @@ const api = {
     pickFolder: (): Promise<string | null> =>
       ipcRenderer.invoke('dialog:pickFolder'),
   },
+  autolaunch: {
+    get: (): Promise<boolean> =>
+      ipcRenderer.invoke('autolaunch:get'),
+    set: (enabled: boolean): Promise<ApiResult & { enabled?: boolean }> =>
+      ipcRenderer.invoke('autolaunch:set', enabled),
+  },
   preview: {
     fetch: (): Promise<SyncPlan | { error: string }> =>
       ipcRenderer.invoke('preview:fetch'),
@@ -228,6 +236,10 @@ const api = {
   shell: {
     openExternal: (url: string): Promise<ApiResult> =>
       ipcRenderer.invoke('shell:openExternal', url),
+    openSyncFolder: (): Promise<ApiResult> =>
+      ipcRenderer.invoke('shell:openSyncFolder'),
+    openLogs: (): Promise<ApiResult> =>
+      ipcRenderer.invoke('shell:openLogs'),
   },
 };
 

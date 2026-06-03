@@ -22,12 +22,12 @@
         <button class="nav-row is-active" data-section="targets">
           <span class="nav-bar"></span>
           <span class="nav-icon">▦</span>
-          <span class="nav-label">Targets</span>
+          <span class="nav-label">Connections</span>
         </button>
         <button class="nav-row" data-section="activity">
           <span class="nav-bar"></span>
           <span class="nav-icon">≡</span>
-          <span class="nav-label">Activity</span>
+          <span class="nav-label">Sync Logs</span>
         </button>
         <button class="nav-row" data-section="conflicts">
           <span class="nav-bar"></span>
@@ -49,30 +49,54 @@
     <!-- Main -->
     <main class="main">
 
-      <!-- Targets pane -->
+      <!-- Connections pane (internal id stays "targets" for routing) -->
       <section class="pane" data-pane="targets">
         <header class="pane-header">
-          <h1 class="ds-headline-md">Targets</h1>
-          <div class="add-target">
-            <button id="btn-add-target" class="btn-primary" type="button">+ Add target</button>
-            <div id="add-target-menu" class="add-target-menu hidden" role="menu">
-              <button type="button" data-add="ghost" role="menuitem">Ghost…</button>
-              <button type="button" data-add="shopify" role="menuitem">Shopify…</button>
-              <button type="button" data-add="wordpress" role="menuitem">WordPress…</button>
-              <button type="button" data-add="webflow" role="menuitem">Webflow…</button>
+          <h1 class="ds-headline-md">Connections</h1>
+          <div class="pane-header-actions">
+            <div class="view-toggle" role="group" aria-label="View mode">
+              <button type="button" class="view-toggle-btn is-active" data-view="grid" aria-pressed="true" title="Grid view">▦</button>
+              <button type="button" class="view-toggle-btn" data-view="list" aria-pressed="false" title="List view">≡</button>
+            </div>
+            <div class="add-target">
+              <button id="btn-add-target" class="btn-primary" type="button">Add connection</button>
+              <div id="add-target-menu" class="add-target-menu hidden" role="menu">
+                <button type="button" data-add="ghost" role="menuitem">Ghost…</button>
+                <button type="button" data-add="shopify" role="menuitem">Shopify…</button>
+                <button type="button" data-add="wordpress" role="menuitem">WordPress…</button>
+                <button type="button" data-add="webflow" role="menuitem">Webflow…</button>
+              </div>
             </div>
           </div>
         </header>
         <hr class="rule" />
 
-        <div class="card-list" id="card-list">
+        <div class="card-list" id="card-list" data-view="grid">
           <!-- Cards rendered by dashboard.ts -->
         </div>
       </section>
 
+      <!-- Sync Logs pane (internal id stays "activity" for routing) -->
       <section class="pane hidden" data-pane="activity">
-        <h1 class="ds-headline-md">Activity</h1>
-        <p class="ds-muted">Per-target sync log lands here (spec S4).</p>
+        <header class="pane-header">
+          <h1 class="ds-headline-md">Sync Logs</h1>
+        </header>
+        <hr class="rule" />
+
+        <div class="logs-toolbar">
+          <div class="filter-chips" id="logs-filters" role="group" aria-label="Filter by platform">
+            <button type="button" class="filter-chip is-active" data-platform="all" aria-pressed="true">All</button>
+            <button type="button" class="filter-chip" data-platform="ghost" aria-pressed="false">Ghost</button>
+            <button type="button" class="filter-chip" data-platform="shopify" aria-pressed="false">Shopify</button>
+            <button type="button" class="filter-chip" data-platform="wordpress" aria-pressed="false">WordPress</button>
+            <button type="button" class="filter-chip" data-platform="webflow" aria-pressed="false">Webflow</button>
+          </div>
+          <input type="text" id="logs-search" class="logs-search" placeholder="Search logs…" autocomplete="off" spellcheck="false" />
+        </div>
+
+        <div class="logs-table" id="logs-table">
+          <!-- Rows rendered by dashboard.ts -->
+        </div>
       </section>
 
       <section class="pane hidden" data-pane="conflicts">
@@ -81,10 +105,74 @@
       </section>
 
       <section class="pane hidden" data-pane="settings">
-        <h1 class="ds-headline-md">Targets</h1>
-        <p class="ds-muted">Every connected site. Edit or remove a connection here.</p>
-        <div class="targets-table" id="targets-table">
-          <!-- Rows rendered by dashboard.ts -->
+        <h1 class="ds-headline-md">Settings</h1>
+        <p class="ds-muted">Global preferences. Per-connection sync settings live on each connection card.</p>
+
+        <!-- ── General ──────────────────────────────────────────────────── -->
+        <div class="settings-group">
+          <div class="settings-group-title">General</div>
+
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <div class="settings-row-name">Local folder</div>
+              <div class="settings-row-help" id="set-folder-path">—</div>
+            </div>
+            <button type="button" class="btn-ghost" id="set-pick-folder">Choose Folder…</button>
+          </div>
+
+          <div class="settings-row">
+            <div class="settings-row-label">
+              <div class="settings-row-name">Launch at Login</div>
+              <div class="settings-row-help">Start Specter automatically when you sign in.</div>
+            </div>
+            <button type="button" class="auto-toggle" id="set-autolaunch" aria-pressed="false">
+              <span class="label">On</span>
+              <span class="switch"></span>
+            </button>
+          </div>
+
+          <div id="set-globals-status" class="settings-status hidden"></div>
+        </div>
+
+        <!-- ── License ──────────────────────────────────────────────────── -->
+        <div class="settings-group">
+          <div class="settings-group-title">License</div>
+          <div id="set-license-section" class="settings-license">
+            <p class="ds-muted">Loading license…</p>
+          </div>
+        </div>
+
+        <!-- ── Advanced ─────────────────────────────────────────────────── -->
+        <div class="settings-group">
+          <div class="settings-group-title">Advanced</div>
+          <div class="settings-row settings-row-stack">
+            <div class="settings-row-label">
+              <div class="settings-row-name">OAuth server</div>
+              <div class="settings-row-help">Leave blank to use Specter's hosted OAuth (recommended). Self-hosters running their own OAuth broker can point Specter at it here.</div>
+            </div>
+            <div class="settings-field-row">
+              <input id="set-oauth-base" type="text" placeholder="https://spectersync.com" autocomplete="off" spellcheck="false" />
+              <button type="button" class="btn-ghost" id="set-oauth-save">Save</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Actions ──────────────────────────────────────────────────── -->
+        <div class="settings-group">
+          <div class="settings-group-title">Actions</div>
+          <div class="settings-actions">
+            <button type="button" class="btn-ghost" id="set-open-folder">Open Sync Folder</button>
+            <button type="button" class="btn-ghost" id="set-view-logs">View Logs</button>
+          </div>
+        </div>
+
+        <!-- ── Connections ──────────────────────────────────────────────── -->
+        <div class="settings-group">
+          <div class="settings-group-title">Connections</div>
+          <p class="ds-muted">Every connected site. Edit, test, or remove a connection here.</p>
+          <div class="targets-table" id="targets-table">
+            <!-- Rows rendered by dashboard.ts -->
+          </div>
         </div>
       </section>
 

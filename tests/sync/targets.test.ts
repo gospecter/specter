@@ -4,9 +4,9 @@
  * Three concerns covered:
  *  1. Legacy single-Ghost configs (every shipped user) auto-synthesize a
  *     single target on load — no migration step, no UX disruption.
- *  2. `effectiveRoot` collapses to the legacy `syncFolderPath` when there
- *     is exactly one target, and nests under `handle` when there are more.
- *     The collapse is what protects shipped users from a surprise file move.
+ *  2. `effectiveRoot` always namespaces a target under its `handle` (v0.6),
+ *     while `legacyRoot` reproduces the pre-v0.6 location for the one-time
+ *     vault migration to read from.
  *  3. `routeToTarget` does longest-prefix matching so nested targets
  *     (`blog/posts` beats `blog`) win, and detects out-of-tree paths.
  */
@@ -25,6 +25,7 @@ import {
 } from '../../src/config.js';
 import {
   effectiveRoot,
+  legacyRoot,
   routeAbsoluteToTarget,
   routeToTarget,
   targetSyncSettings,
@@ -289,19 +290,36 @@ describe('effectiveRoot', () => {
     ...overrides,
   });
 
-  it('single-target: returns the bare syncFolderPath (no handle prefix)', () => {
-    expect(effectiveRoot(target({ syncFolderPath: 'posts' }), false)).toBe('posts');
-    expect(effectiveRoot(target({ syncFolderPath: '' }), false)).toBe('');
+  it('always namespaces under the handle, regardless of target count', () => {
+    expect(effectiveRoot(target({ handle: 'a', syncFolderPath: 'posts' }))).toBe('a/posts');
   });
 
-  it('multi-target: prefixes with handle', () => {
-    expect(effectiveRoot(target({ handle: 'a', syncFolderPath: 'posts' }), true)).toBe(
-      'a/posts',
-    );
+  it('returns just the handle when no subfolder is set', () => {
+    expect(effectiveRoot(target({ handle: 'a', syncFolderPath: '' }))).toBe('a');
+  });
+});
+
+describe('legacyRoot', () => {
+  const target = (handle: string, syncFolderPath = ''): TargetConfig => ({
+    handle,
+    label: handle,
+    syncFolderPath,
+    pullDrafts: true,
+    pullPublished: true,
+    conflictStrategy: 'ask',
+    syncMode: 'auto',
+    adapter: { platform: 'ghost', ghostUrl: 'u', adminApiKey: 'k' },
   });
 
-  it('multi-target with empty syncFolderPath: returns just the handle', () => {
-    expect(effectiveRoot(target({ handle: 'a', syncFolderPath: '' }), true)).toBe('a');
+  it('single-target (wasMulti=false): bare syncFolderPath, root when empty', () => {
+    expect(legacyRoot(target('ghost', 'posts'), false)).toBe('posts');
+    expect(legacyRoot(target('ghost', ''), false)).toBe('');
+  });
+
+  it('multi-target (wasMulti=true): already namespaced, matches effectiveRoot', () => {
+    const t = target('a', 'posts');
+    expect(legacyRoot(t, true)).toBe('a/posts');
+    expect(legacyRoot(t, true)).toBe(effectiveRoot(t));
   });
 });
 
@@ -317,33 +335,33 @@ describe('routeToTarget', () => {
     adapter: { platform: 'ghost', ghostUrl: 'u', adminApiKey: 'k' },
   });
 
-  it('single-target with empty root matches everything', () => {
+  it('single-target: only files under its handle folder match', () => {
     const targets = [t('only', '')];
-    expect(routeToTarget('whatever/anywhere.md', targets, false)?.handle).toBe('only');
+    expect(routeToTarget('only/anywhere.md', targets)?.handle).toBe('only');
+    expect(routeToTarget('whatever/anywhere.md', targets)).toBeNull();
   });
 
-  it('single-target with syncFolderPath rejects files outside it', () => {
+  it('single-target with syncFolderPath: matches under handle/sub only', () => {
     const targets = [t('only', 'posts')];
-    expect(routeToTarget('posts/x.md', targets, false)?.handle).toBe('only');
-    expect(routeToTarget('other/x.md', targets, false)).toBeNull();
+    expect(routeToTarget('only/posts/x.md', targets)?.handle).toBe('only');
+    expect(routeToTarget('posts/x.md', targets)).toBeNull();
   });
 
-  it('multi-target: longest-prefix wins', () => {
+  it('longest-prefix wins', () => {
     const targets = [t('a', ''), t('b', 'posts')];
-    // multi -> roots become 'a' and 'b/posts'
-    expect(routeToTarget('a/somefile.md', targets, true)?.handle).toBe('a');
-    expect(routeToTarget('b/posts/x.md', targets, true)?.handle).toBe('b');
+    expect(routeToTarget('a/somefile.md', targets)?.handle).toBe('a');
+    expect(routeToTarget('b/posts/x.md', targets)?.handle).toBe('b');
   });
 
-  it('multi-target: nested handles route correctly', () => {
+  it('nested handles route correctly', () => {
     const targets = [t('blog', 'posts'), t('blog-archive', '')];
-    expect(routeToTarget('blog/posts/x.md', targets, true)?.handle).toBe('blog');
-    expect(routeToTarget('blog-archive/y.md', targets, true)?.handle).toBe('blog-archive');
+    expect(routeToTarget('blog/posts/x.md', targets)?.handle).toBe('blog');
+    expect(routeToTarget('blog-archive/y.md', targets)?.handle).toBe('blog-archive');
   });
 
   it('returns null when the path is outside every target tree', () => {
     const targets = [t('a', 'one'), t('b', 'two')];
-    expect(routeToTarget('three/x.md', targets, true)).toBeNull();
+    expect(routeToTarget('three/x.md', targets)).toBeNull();
   });
 });
 
@@ -363,10 +381,11 @@ describe('routeAbsoluteToTarget', () => {
           adapter: { platform: 'ghost' as const, ghostUrl: 'u', adminApiKey: 'k' },
         },
       ];
-      const abs = path.join(vault, 'one', 'note.md');
-      const route = routeAbsoluteToTarget(abs, vault, targets, false);
+      // Files now live under the handle folder.
+      const abs = path.join(vault, 'a', 'one', 'note.md');
+      const route = routeAbsoluteToTarget(abs, vault, targets);
       expect(route?.target.handle).toBe('a');
-      expect(route?.relPath).toBe('one/note.md');
+      expect(route?.relPath).toBe('a/one/note.md');
     } finally {
       await fs.rm(vault, { recursive: true, force: true });
     }
@@ -385,9 +404,7 @@ describe('routeAbsoluteToTarget', () => {
         adapter: { platform: 'ghost' as const, ghostUrl: 'u', adminApiKey: 'k' },
       },
     ];
-    expect(
-      routeAbsoluteToTarget('/etc/passwd', '/tmp/some-vault', targets, false),
-    ).toBeNull();
+    expect(routeAbsoluteToTarget('/etc/passwd', '/tmp/some-vault', targets)).toBeNull();
   });
 });
 
@@ -403,19 +420,15 @@ describe('targetSyncSettings', () => {
       syncMode: 'manual',
       adapter: { platform: 'ghost', ghostUrl: 'u', adminApiKey: 'k' },
     };
-    // multi-target case nests under the handle.
-    const multi = targetSyncSettings(target, true);
-    expect(multi.syncFolderPath).toBe('h/posts');
-    expect(multi.pullDrafts).toBe(false);
-    expect(multi.conflictStrategy).toBe('keep_local');
-    expect(multi.syncMode).toBe('manual');
+    const settings = targetSyncSettings(target);
+    // Always namespaced under the handle now.
+    expect(settings.syncFolderPath).toBe('h/posts');
+    expect(settings.pullDrafts).toBe(false);
+    expect(settings.conflictStrategy).toBe('keep_local');
+    expect(settings.syncMode).toBe('manual');
     // ghostUrl/adminApiKey are vestigial in the GhostSyncSettings interface;
     // the engine no longer reads them — adapter is injected separately.
-    expect(multi.ghostUrl).toBe('');
-    expect(multi.adminApiKey).toBe('');
-
-    // single-target collapses to the bare syncFolderPath.
-    const single = targetSyncSettings(target, false);
-    expect(single.syncFolderPath).toBe('posts');
+    expect(settings.ghostUrl).toBe('');
+    expect(settings.adminApiKey).toBe('');
   });
 });

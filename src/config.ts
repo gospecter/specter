@@ -68,6 +68,15 @@ export interface DaemonConfig extends GhostSyncSettings {
    * legacy fields if absent on disk). Always written to disk by `saveConfig`.
    */
   targets: TargetConfig[];
+  /**
+   * Vault folder layout marker. `'namespaced'` means every target's files
+   * already live under its handle folder (the only layout written since v0.6).
+   * Absent (or `'flat'`) marks a pre-v0.6 config whose single target may still
+   * have files at the bare `syncFolderPath` — `migrateVaultLayout` checks and
+   * relocates them once, then stamps `'namespaced'`. Optional so existing
+   * on-disk configs load unchanged and trigger exactly one migration pass.
+   */
+  vaultLayout?: 'flat' | 'namespaced';
 }
 
 export interface DaemonState {
@@ -346,7 +355,6 @@ export function defaultHandleBase(adapter: AdapterConfig): string {
 export function validateTargets(targets: TargetConfig[]): void {
   const seenHandles = new Set<string>();
   const rootOwner = new Map<string, string>();
-  const isMulti = targets.length > 1;
   for (const t of targets) {
     if (!t.handle || !HANDLE_RE.test(t.handle)) {
       throw new Error(
@@ -359,7 +367,7 @@ export function validateTargets(targets: TargetConfig[]): void {
       );
     }
     seenHandles.add(t.handle);
-    const root = effectiveRoot(t, isMulti);
+    const root = effectiveRoot(t);
     const prior = rootOwner.get(root);
     if (prior !== undefined) {
       throw new Error(

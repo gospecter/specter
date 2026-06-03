@@ -3,6 +3,7 @@ import chokidar from 'chokidar';
 import { createAdapter } from '../cms/index.js';
 import { SyncEngine } from '../sync/engine.js';
 import { effectiveRoot, routeAbsoluteToTarget, targetSyncSettings } from '../sync/targets.js';
+import { migrateVaultLayout } from '../sync/migrate.js';
 import { Vault } from '../vault.js';
 import {
   TargetConfig,
@@ -31,36 +32,70 @@ interface TargetRuntime {
 export async function watchCommand(options: WatchOptions): Promise<void> {
   const config = requireConfig(await loadConfig());
   const vault = new Vault(config.vaultPath);
-  const isMulti = config.targets.length > 1;
+
+  // One-time vault layout migration: pre-v0.6 single-target vaults kept files
+  // at the bare syncFolderPath; every target is now namespaced under its
+  // handle. Runs before we build runtimes so the watcher points at the new
+  // locations. No-op once the config is stamped `vaultLayout: 'namespaced'`.
+  let migrationOk = true;
+  try {
+    await migrateVaultLayout(config, { log: (m) => console.log(`[ghost-sync] ${m}`) });
+  } catch (err) {
+    migrationOk = false;
+    console.error('[ghost-sync] vault layout migration failed:', err);
+    console.error(
+      '[ghost-sync] automatic sync is paused until this is resolved — files still live at their old ' +
+        'location while Specter now expects them under each connection\'s folder. Resolve the conflict ' +
+        'above (or run `ghost-sync migrate`) and restart.',
+    );
+  }
 
   const runtimes: TargetRuntime[] = config.targets.map((target) => {
-    const settings = targetSyncSettings(target, isMulti);
+    const settings = targetSyncSettings(target);
     const adapter = createAdapter(target.adapter);
     const engine = new SyncEngine(vault, adapter, settings);
-    const absRoot = path.resolve(config.vaultPath, effectiveRoot(target, isMulti));
+    const absRoot = path.resolve(config.vaultPath, effectiveRoot(target));
     return { target, engine, absRoot };
   });
 
   const intervalMs = Math.max(1, parseInt(options.interval, 10)) * 60 * 1000;
-  // In manual mode no target pushes on its own. We still poll for remote
-  // changes per-target so local copies don't drift. If targets disagree on
-  // mode, treat any 'manual' as "skip pushes for that target" rather than
-  // forcing one mode globally.
-  const anyAuto = runtimes.some((r) => r.target.syncMode === 'auto');
+
+  // Reconciliation is per-target and honors each target's syncMode. Auto
+  // targets get a full bi-directional sync; manual targets are NEVER pulled or
+  // pushed automatically — not on startup, not on the periodic tick. "Manual
+  // only" means the user drives every sync explicitly (menu / dashboard / CLI),
+  // so connecting a manual target no longer triggers a surprise pull.
+  const autoHandles = runtimes
+    .filter((r) => r.target.syncMode === 'auto')
+    .map((r) => r.target.handle);
+
+  const reconcile = async (label: string): Promise<void> => {
+    // A failed layout migration means files may still sit at their old paths
+    // while the engine now looks under handle folders — auto-pulling would
+    // create duplicates. Stay hands-off until the user resolves it.
+    if (!migrationOk) return;
+    for (const handle of autoHandles) {
+      try {
+        await runOnce('sync', { target: handle, silent: true });
+      } catch (err) {
+        console.error(`[ghost-sync] ${label} sync failed for [${handle}]:`, err);
+      }
+    }
+  };
 
   for (const { target, absRoot } of runtimes) {
     console.log(`[ghost-sync] [${target.handle}] watching ${absRoot} (mode=${target.syncMode})`);
   }
-  console.log(
-    `[ghost-sync] periodic ${anyAuto ? 'full sync' : 'pull'} every ${options.interval}m`,
-  );
-
-  // Initial reconciliation. runOnce iterates all targets internally.
-  try {
-    await runOnce(anyAuto ? 'sync' : 'pull', true);
-  } catch (err) {
-    console.error(`[ghost-sync] initial sync failed:`, err);
+  if (autoHandles.length > 0) {
+    console.log(
+      `[ghost-sync] periodic full sync every ${options.interval}m for: ${autoHandles.join(', ')}`,
+    );
+  } else {
+    console.log('[ghost-sync] all targets manual — no automatic reconciliation; sync on demand');
   }
+
+  // Initial reconciliation (auto targets only).
+  await reconcile('initial');
 
   const pending = new Set<string>();
   let timer: NodeJS.Timeout | null = null;
@@ -75,7 +110,6 @@ export async function watchCommand(options: WatchOptions): Promise<void> {
         absPath,
         config.vaultPath,
         config.targets,
-        isMulti,
       );
       if (!route) continue;
       const runtime = runtimes.find((r) => r.target.handle === route.target.handle);
@@ -160,13 +194,15 @@ export async function watchCommand(options: WatchOptions): Promise<void> {
       .on('error', (err) => console.error('[ghost-sync] watcher error:', err));
   }
 
-  // Periodic reconciliation. runOnce handles per-target mode internally
-  // (auto targets sync; manual targets only pull).
-  const periodic = setInterval(() => {
-    runOnce(anyAuto ? 'sync' : 'pull', true).catch((err) =>
-      console.error('[ghost-sync] periodic sync failed:', err),
-    );
-  }, intervalMs);
+  // Periodic reconciliation — auto targets only (see `reconcile`). Skipped
+  // entirely when no target is in auto mode.
+  const periodic = autoHandles.length
+    ? setInterval(() => {
+        reconcile('periodic').catch((err) =>
+          console.error('[ghost-sync] periodic sync failed:', err),
+        );
+      }, intervalMs)
+    : null;
 
   // Daily license re-validation.
   const revalidate = setInterval(() => {
@@ -179,7 +215,7 @@ export async function watchCommand(options: WatchOptions): Promise<void> {
   }, 60 * 1000);
 
   const shutdown = async () => {
-    clearInterval(periodic);
+    if (periodic) clearInterval(periodic);
     clearInterval(revalidate);
     if (timer) clearTimeout(timer);
     await flush();

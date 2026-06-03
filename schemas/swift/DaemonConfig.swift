@@ -35,12 +35,18 @@ public struct DaemonConfig: Equatable {
     /// Multi-target list. Always present after `loadConfig()` (synthesized from legacy fields if
     /// absent on disk). Always written to disk by `saveConfig`.
     public let targets: [TargetConfig]
+    /// Vault folder layout marker. `'namespaced'` means every target's files already live under
+    /// its handle folder (the only layout written since v0.6). Absent (or `'flat'`) marks a
+    /// pre-v0.6 config whose single target may still have files at the bare `syncFolderPath` —
+    /// `migrateVaultLayout` checks and relocates them once, then stamps `'namespaced'`. Optional
+    /// so existing on-disk configs load unchanged and trigger exactly one migration pass.
+    public let vaultLayout: VaultLayout?
     /// Absolute path to the vault root.
     public let vaultPath: String
     /// Debounce window (ms) for the file watcher before flushing changes.
     public let watchDebounceMS: Double
 
-    public init(adminAPIKey: String, conflictStrategy: ConflictStrategy, contentKinds: [String], ghostURL: String, oauthBaseURL: String?, pullDrafts: Bool, pullPublished: Bool, syncFolderPath: String, syncMode: SyncMode, targets: [TargetConfig], vaultPath: String, watchDebounceMS: Double) {
+    public init(adminAPIKey: String, conflictStrategy: ConflictStrategy, contentKinds: [String], ghostURL: String, oauthBaseURL: String?, pullDrafts: Bool, pullPublished: Bool, syncFolderPath: String, syncMode: SyncMode, targets: [TargetConfig], vaultLayout: VaultLayout?, vaultPath: String, watchDebounceMS: Double) {
         self.adminAPIKey = adminAPIKey
         self.conflictStrategy = conflictStrategy
         self.contentKinds = contentKinds
@@ -51,6 +57,7 @@ public struct DaemonConfig: Equatable {
         self.syncFolderPath = syncFolderPath
         self.syncMode = syncMode
         self.targets = targets
+        self.vaultLayout = vaultLayout
         self.vaultPath = vaultPath
         self.watchDebounceMS = watchDebounceMS
     }
@@ -189,4 +196,14 @@ public enum Platform: String, Equatable {
     case shopify
     case webflow
     case wordpress
+}
+
+/// Vault folder layout marker. `'namespaced'` means every target's files already live under
+/// its handle folder (the only layout written since v0.6). Absent (or `'flat'`) marks a
+/// pre-v0.6 config whose single target may still have files at the bare `syncFolderPath` —
+/// `migrateVaultLayout` checks and relocates them once, then stamps `'namespaced'`. Optional
+/// so existing on-disk configs load unchanged and trigger exactly one migration pass.
+public enum VaultLayout: String, Equatable {
+    case flat
+    case namespaced
 }

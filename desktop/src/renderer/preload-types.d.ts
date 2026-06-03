@@ -103,6 +103,10 @@ export interface SpecterApi {
   config: {
     read: () => Promise<AppConfig | null>;
     write: (cfg: AppConfig) => Promise<ApiResult>;
+    writeGlobals: (patch: {
+      vaultPath?: string;
+      oauthBaseUrl?: string;
+    }) => Promise<ApiResult>;
     exists: () => Promise<boolean>;
     setTargetSyncMode: (
       handle: string,
@@ -169,6 +173,10 @@ export interface SpecterApi {
   dialog: {
     pickFolder: () => Promise<string | null>;
   };
+  autolaunch: {
+    get: () => Promise<boolean>;
+    set: (enabled: boolean) => Promise<ApiResult & { enabled?: boolean }>;
+  };
   preview: {
     fetch: () => Promise<SyncPlan | { error: string }>;
   };
@@ -184,6 +192,8 @@ export interface SpecterApi {
   };
   shell: {
     openExternal: (url: string) => Promise<ApiResult>;
+    openSyncFolder: () => Promise<ApiResult>;
+    openLogs: () => Promise<ApiResult>;
   };
 }
 

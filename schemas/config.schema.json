@@ -61,6 +61,14 @@
             "$ref": "#/definitions/TargetConfig"
           },
           "description": "Multi-target list. Always present after `loadConfig()` (synthesized from legacy fields if absent on disk). Always written to disk by `saveConfig`."
+        },
+        "vaultLayout": {
+          "type": "string",
+          "enum": [
+            "flat",
+            "namespaced"
+          ],
+          "description": "Vault folder layout marker. `'namespaced'` means every target's files already live under its handle folder (the only layout written since v0.6). Absent (or `'flat'`) marks a pre-v0.6 config whose single target may still have files at the bare `syncFolderPath` — `migrateVaultLayout` checks and relocates them once, then stamps `'namespaced'`. Optional so existing on-disk configs load unchanged and trigger exactly one migration pass."
         }
       },
       "required": [

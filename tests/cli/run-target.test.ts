@@ -388,7 +388,10 @@ describe('per-target state.json writes', () => {
       'Fresh Draft',
       'Body of the fresh draft.',
     );
-    await fs.writeFile(path.join(dirs.vaultPath, 'fresh-draft.md'), md, 'utf8');
+    // Every target is namespaced under its handle now, so the local file must
+    // live in the `ghost/` folder for the engine to see it.
+    await fs.mkdir(path.join(dirs.vaultPath, 'ghost'), { recursive: true });
+    await fs.writeFile(path.join(dirs.vaultPath, 'ghost', 'fresh-draft.md'), md, 'utf8');
 
     const { runOnce } = await import('../../src/cli/run.js');
     await runOnce('push', { silent: true });

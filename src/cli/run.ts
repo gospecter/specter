@@ -108,7 +108,7 @@ async function planRun(
 
   for (const target of selected) {
     const activeTarget = await refreshShopifyTargetIfNeeded(config, target);
-    const settings = targetSyncSettings(activeTarget, isMulti);
+    const settings = targetSyncSettings(activeTarget);
     const vault = new DryRunVault(config.vaultPath, plan);
     const realAdapter = createAdapter(activeTarget.adapter);
     const adapter = new DryRunAdapter(realAdapter, plan);
@@ -296,14 +296,14 @@ async function executeRun(
   try {
     for (const target of selected) {
       let activeTarget = target;
-      let settings = targetSyncSettings(activeTarget, isMulti);
+      let settings = targetSyncSettings(activeTarget);
       let adapter = createAdapter(activeTarget.adapter);
       let engine = new SyncEngine(new Vault(config.vaultPath), adapter, settings);
       let outcome = emptyTargetOutcome(activeTarget);
 
       async function rebuildAfterShopifyRefresh(): Promise<void> {
         activeTarget = await refreshShopifyTarget(config, activeTarget);
-        settings = targetSyncSettings(activeTarget, isMulti);
+        settings = targetSyncSettings(activeTarget);
         adapter = createAdapter(activeTarget.adapter);
         engine = new SyncEngine(new Vault(config.vaultPath), adapter, settings);
         outcome = emptyTargetOutcome(activeTarget);

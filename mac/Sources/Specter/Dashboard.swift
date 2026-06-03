@@ -31,8 +31,8 @@ final class DashboardController: ObservableObject {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .targets:   return "Targets"
-            case .activity:  return "Activity"
+            case .targets:   return "Connections"
+            case .activity:  return "Sync Logs"
             case .conflicts: return "Conflicts"
             case .settings:  return "Settings"
             }
@@ -53,6 +53,15 @@ final class DashboardController: ObservableObject {
     /// when no config exists yet (clean install before onboarding).
     @Published var targets: [SyncTarget] = []
     @Published var state: DaemonState?
+
+    /// Global (app-level) preferences surfaced in the Settings pane. These are
+    /// the only settings that aren't per-connection: the vault root, the OAuth
+    /// broker override, and (via `LoginItem`) launch-at-login. Per-connection
+    /// sync mode / conflict strategy / content kinds live on each connection,
+    /// never here — that was the "prefs shouldn't mention a specific Ghost
+    /// instance" feedback.
+    @Published var vaultPath: String = ""
+    @Published var oauthBaseUrl: String = ""
 
     @Published var isFreeTier: Bool = false
 
@@ -114,6 +123,49 @@ final class DashboardController: ObservableObject {
         let state = loadDaemonState()
         self.state = state
         self.targets = buildTargets(config: config, state: state)
+        self.vaultPath = config?.vaultPath ?? ""
+        self.oauthBaseUrl = config?.oauthBaseUrl ?? ""
+    }
+
+    /// Load → mutate → save the config, restart the daemon so the change takes
+    /// effect, and refresh. Used by the Settings pane's global-pref editors.
+    private func updateConfig(_ mutate: (inout DaemonConfig) -> Void) {
+        guard var cfg = ConfigStore.load() else { return }
+        mutate(&cfg)
+        do {
+            try ConfigStore.save(cfg)
+            supervisor?.restart()
+            reload()
+        } catch {
+            MenuActions.notify("Specter", "Couldn't save settings: \(error.localizedDescription)")
+        }
+    }
+
+    /// Choose a new vault root from the Settings pane.
+    func pickVaultFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose Folder"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        updateConfig { $0.vaultPath = url.standardizedFileURL.path }
+    }
+
+    /// Persist the OAuth broker override (empty → nil, i.e. use the hosted default).
+    func saveOAuthBaseUrl(_ raw: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        updateConfig { $0.oauthBaseUrl = trimmed.isEmpty ? nil : trimmed }
+    }
+
+    func openSyncFolder() {
+        guard !vaultPath.isEmpty else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: vaultPath))
+    }
+
+    func openLogs() {
+        NSWorkspace.shared.open(Paths.logPath)
     }
 
     /// Per-card action dispatch: spawn the daemon with the requested
@@ -436,15 +488,16 @@ final class DashboardController: ObservableObject {
 struct DashboardView: View {
     @ObservedObject var controller: DashboardController
     @ObservedObject var preview: PreviewController
+    @ObservedObject var license: LicenseController
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         HStack(spacing: 0) {
             SidebarNav(
                 selected: $controller.section,
-                isFreeTier: controller.isFreeTier
+                isFreeTier: license.isFree
             )
-            DashboardMain(controller: controller) { handle in
+            DashboardMain(controller: controller, license: license) { handle in
                 preview.configure(targetHandle: handle)
                 NSApplication.shared.setActivationPolicy(.regular)
                 NSApplication.shared.activate(ignoringOtherApps: true)
@@ -454,7 +507,7 @@ struct DashboardView: View {
         .frame(minWidth: 960, minHeight: 640)
         .background(DS.Surface.base)
         .preferredColorScheme(.dark)
-        .onAppear { controller.start() }
+        .onAppear { controller.start(); license.refresh() }
         .onDisappear { controller.stop() }
     }
 }
@@ -566,6 +619,7 @@ private struct SidebarRow: View {
 
 private struct DashboardMain: View {
     @ObservedObject var controller: DashboardController
+    @ObservedObject var license: LicenseController
     var onPreviewTarget: (String) -> Void
 
     var body: some View {
@@ -574,7 +628,7 @@ private struct DashboardMain: View {
             case .targets:   TargetsPane(controller: controller, onPreviewTarget: onPreviewTarget)
             case .activity:  ActivityPane(controller: controller)
             case .conflicts: ConflictsPane(controller: controller)
-            case .settings:  SettingsPane(controller: controller)
+            case .settings:  SettingsPane(controller: controller, license: license)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -586,16 +640,26 @@ private struct TargetsPane: View {
     var onPreviewTarget: (String) -> Void
     @Environment(\.openWindow) private var openWindow
 
+    /// Persisted grid/list preference (mockup's view toggle).
+    @AppStorage("connectionsLayout") private var layout: String = "grid"
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.section) {
                 // Top bar
-                HStack {
-                    Text("Targets")
+                HStack(spacing: 12) {
+                    Text("Connections")
                         .font(DS.Typography.headlineMd())
                         .foregroundStyle(DS.Text.primary)
                     Spacer()
-                    Menu("+ Add target") {
+                    Picker("", selection: $layout) {
+                        Image(systemName: "square.grid.2x2").tag("grid")
+                        Image(systemName: "list.bullet").tag("list")
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                    Menu("+ Add connection") {
                         Button("Ghost…") {
                             // First run (no config yet) still goes through
                             // onboarding so the user picks a vault folder; once
@@ -634,29 +698,36 @@ private struct TargetsPane: View {
 
                 if controller.targets.isEmpty {
                     EmptyTargetsState()
-                } else {
-                    VStack(spacing: DS.Space.section) {
+                } else if layout == "list" {
+                    VStack(spacing: DS.Space.unit * 2) {
                         ForEach($controller.targets) { $target in
-                            SyncCard(
-                                target: $target,
-                                onPull:   { controller.runAction(.pull,   handle: target.id) },
-                                onPush:   { controller.runAction(.push,   handle: target.id) },
-                                onDryRun: { onPreviewTarget(target.id) },
-                                onEdit:   {
-                                    if let windowId = controller.prepareEdit(handle: target.id) {
-                                        NSApplication.shared.setActivationPolicy(.regular)
-                                        NSApplication.shared.activate(ignoringOtherApps: true)
-                                        openWindow(id: windowId)
-                                    }
-                                },
-                                onTest:   { controller.testTarget(handle: target.id) },
-                                onRemove: { controller.removeTarget(handle: target.id) },
-                                onResolveConflict: { /* future: per-target conflict */ },
-                                onAutoSyncChange: { enabled in
-                                    controller.setAutoSync(handle: target.id,
-                                                           enabled: enabled)
-                                }
-                            )
+                            SyncCardRow(target: $target,
+                                        onPull: pull($target.wrappedValue.id),
+                                        onPush: push($target.wrappedValue.id),
+                                        onDryRun: { onPreviewTarget($target.wrappedValue.id) },
+                                        onEdit: edit($target.wrappedValue.id),
+                                        onTest: { controller.testTarget(handle: $target.wrappedValue.id) },
+                                        onRemove: { controller.removeTarget(handle: $target.wrappedValue.id) },
+                                        onResolveConflict: {},
+                                        onAutoSyncChange: auto($target.wrappedValue.id))
+                        }
+                    }
+                } else {
+                    LazyVGrid(
+                        columns: [GridItem(.flexible(), spacing: DS.Space.gutter),
+                                  GridItem(.flexible(), spacing: DS.Space.gutter)],
+                        spacing: DS.Space.gutter
+                    ) {
+                        ForEach($controller.targets) { $target in
+                            SyncCard(target: $target,
+                                     onPull: pull($target.wrappedValue.id),
+                                     onPush: push($target.wrappedValue.id),
+                                     onDryRun: { onPreviewTarget($target.wrappedValue.id) },
+                                     onEdit: edit($target.wrappedValue.id),
+                                     onTest: { controller.testTarget(handle: $target.wrappedValue.id) },
+                                     onRemove: { controller.removeTarget(handle: $target.wrappedValue.id) },
+                                     onResolveConflict: {},
+                                     onAutoSyncChange: auto($target.wrappedValue.id))
                         }
                     }
                 }
@@ -664,6 +735,23 @@ private struct TargetsPane: View {
             .padding(DS.Space.section)
             .frame(maxWidth: DS.Space.containerMax, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+    }
+
+    // Closure factories shared by the grid card and list row so the wiring
+    // isn't duplicated per layout branch.
+    private func pull(_ id: String) -> () -> Void { { controller.runAction(.pull, handle: id) } }
+    private func push(_ id: String) -> () -> Void { { controller.runAction(.push, handle: id) } }
+    private func auto(_ id: String) -> (Bool) -> Void {
+        { enabled in controller.setAutoSync(handle: id, enabled: enabled) }
+    }
+    private func edit(_ id: String) -> () -> Void {
+        {
+            if let windowId = controller.prepareEdit(handle: id) {
+                NSApplication.shared.setActivationPolicy(.regular)
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                openWindow(id: windowId)
+            }
         }
     }
 }
@@ -678,7 +766,7 @@ private struct EmptyTargetsState: View {
             Text("No connected sites yet")
                 .font(DS.Typography.headlineSm())
                 .foregroundStyle(DS.Text.primary)
-            Text("Use the menu bar to set up your first sync.")
+            Text("Use “+ Add connection” above to set up your first sync.")
                 .font(DS.Typography.bodyMd())
                 .foregroundStyle(DS.Text.muted)
         }
@@ -687,34 +775,76 @@ private struct EmptyTargetsState: View {
     }
 }
 
+/// Sync Logs — the mockup's event table. One row per connection's last sync
+/// (the rolling event feed is a deferred follow-up; see the spec). Platform
+/// filter chips + a search box narrow the rows client-side.
 private struct ActivityPane: View {
     @ObservedObject var controller: DashboardController
+
+    @State private var platformFilter: String = "all"
+    @State private var search: String = ""
+
+    private var rows: [(target: SyncTarget, state: TargetSyncState?)] {
+        controller.targets
+            .map { ($0, controller.state?.targets?[$0.id]) }
+            .filter { platformFilter == "all" || $0.0.platform.displayName == platformFilter }
+            .filter { row in
+                guard !search.isEmpty else { return true }
+                let hay = "\(row.0.platform.displayName) \(row.0.label) \(SyncLogRow.description(for: row.1))".lowercased()
+                return hay.contains(search.lowercased())
+            }
+    }
+
+    private var platforms: [String] {
+        var seen: [String] = []
+        for t in controller.targets where !seen.contains(t.platform.displayName) {
+            seen.append(t.platform.displayName)
+        }
+        return seen
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.section) {
-                VStack(alignment: .leading, spacing: DS.Space.unit) {
-                    Text("Activity")
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Sync Logs")
                         .font(DS.Typography.headlineMd())
                         .foregroundStyle(DS.Text.primary)
-                    Text(controller.state?.lastSyncMessage ?? "No sync has run yet.")
-                        .font(DS.Typography.bodyMd())
-                        .foregroundStyle(DS.Text.muted)
+                    Spacer()
+                    if !controller.targets.isEmpty {
+                        TextField("Search…", text: $search)
+                            .textFieldStyle(.plain)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(DS.Surface.input, in: RoundedRectangle(cornerRadius: DS.Radius.base))
+                            .overlay(RoundedRectangle(cornerRadius: DS.Radius.base)
+                                .strokeBorder(DS.Surface.borderSubtle, lineWidth: 1))
+                            .frame(width: 220)
+                    }
                 }
 
                 if controller.targets.isEmpty {
-                    Text("No targets connected.")
+                    Text("No sync has run yet. Connect a platform and sync to see events here.")
                         .font(DS.Typography.bodyMd())
                         .foregroundStyle(DS.Text.muted)
+                        .dsCard(padding: DS.Space.gutter * 2)
                 } else {
-                    VStack(spacing: DS.Space.unit * 1.5) {
-                        ForEach(controller.targets) { target in
-                            ActivityRow(
-                                target: target,
-                                state: controller.state?.targets?[target.id]
-                            )
+                    // Filter chips
+                    HStack(spacing: DS.Space.unit * 2) {
+                        FilterChip(label: "All", active: platformFilter == "all") { platformFilter = "all" }
+                        ForEach(platforms, id: \.self) { p in
+                            FilterChip(label: p, active: platformFilter == p) { platformFilter = p }
                         }
                     }
+
+                    // Table
+                    VStack(spacing: 0) {
+                        SyncLogHeader()
+                        ForEach(rows, id: \.target.id) { row in
+                            SyncLogRow(target: row.target, state: row.state)
+                            Rectangle().fill(DS.Surface.borderSubtle).frame(height: 1)
+                        }
+                    }
+                    .dsCard(padding: 0)
                 }
             }
             .padding(DS.Space.section)
@@ -724,44 +854,106 @@ private struct ActivityPane: View {
     }
 }
 
-private struct ActivityRow: View {
+private struct FilterChip: View {
+    let label: String
+    let active: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(label.uppercased())
+                .font(DS.Typography.labelSm())
+                .foregroundStyle(active ? DS.Text.onPrimary : DS.Text.muted)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(active ? DS.Accent.primary : DS.Surface.elevated,
+                            in: RoundedRectangle(cornerRadius: DS.Radius.base))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.base)
+                    .strokeBorder(active ? Color.clear : DS.Surface.borderSubtle, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct SyncLogHeader: View {
+    var body: some View {
+        HStack(spacing: DS.Space.gutter) {
+            cell("PLATFORM", width: 160, align: .leading)
+            cell("STATUS", width: 110, align: .leading)
+            cell("DESCRIPTION", width: nil, align: .leading)
+            cell("TIMESTAMP", width: 160, align: .trailing)
+        }
+        .padding(.horizontal, DS.Space.gutter)
+        .padding(.vertical, DS.Space.gutter)
+        .background(DS.Surface.panel)
+        .overlay(Rectangle().fill(DS.Surface.borderSubtle).frame(height: 1), alignment: .bottom)
+    }
+
+    @ViewBuilder
+    private func cell(_ text: String, width: CGFloat?, align: Alignment) -> some View {
+        Text(text)
+            .font(DS.Typography.labelSm())
+            .foregroundStyle(DS.Text.outline)
+            .frame(width: width, alignment: align)
+            .frame(maxWidth: width == nil ? .infinity : nil, alignment: align)
+    }
+}
+
+private struct SyncLogRow: View {
     let target: SyncTarget
     let state: TargetSyncState?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DS.Space.unit) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(target.platform.displayName)
-                        .font(DS.Typography.headlineSm())
-                        .foregroundStyle(DS.Text.primary)
-                    Text(target.id)
-                        .font(DS.Typography.bodySm())
-                        .foregroundStyle(DS.Text.muted)
-                }
-                Spacer()
-                DSPill(
-                    text: (state?.lastSyncStatus ?? "never").uppercased(),
-                    tone: state?.lastSyncStatus == "error" ? .error : .success
-                )
+        HStack(spacing: DS.Space.gutter) {
+            HStack(spacing: 8) {
+                PlatformIconTile(systemName: target.platformIcon, size: 28)
+                Text(target.platform.displayName)
+                    .font(DS.Typography.bodyMd())
+                    .foregroundStyle(DS.Text.primary)
+                    .lineLimit(1)
             }
+            .frame(width: 160, alignment: .leading)
 
-            HStack(spacing: DS.Space.gutter) {
-                Text("Pulled \(state?.lastPullCount ?? 0)")
-                Text("Pushed \(state?.lastPushCount ?? 0)")
-                Text("Conflicts \(state?.lastConflicts ?? 0)")
-            }
-            .font(DS.Typography.bodySm())
-            .foregroundStyle(DS.Text.muted)
+            DSPill(text: statusText, tone: statusTone, dot: true)
+                .frame(width: 110, alignment: .leading)
 
-            if let error = state?.lastError, !error.isEmpty {
-                Text(error)
-                    .font(DS.Typography.bodySm())
-                    .foregroundStyle(DS.Status.error)
-                    .textSelection(.enabled)
-            }
+            Text(Self.description(for: state))
+                .font(DS.Typography.bodyMd())
+                .foregroundStyle(DS.Text.muted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .lineLimit(2)
+
+            Text(Self.timestamp(state?.lastSyncAt))
+                .font(DS.Typography.bodySm())
+                .foregroundStyle(DS.Text.outline)
+                .frame(width: 160, alignment: .trailing)
         }
-        .dsCard(padding: DS.Space.gutter)
+        .padding(.horizontal, DS.Space.gutter)
+        .padding(.vertical, DS.Space.gutter)
+    }
+
+    private var statusText: String { (state?.lastSyncStatus ?? "never").uppercased() }
+    private var statusTone: DSPill.Tone {
+        switch state?.lastSyncStatus {
+        case "ok":              return .success
+        case "error":           return .error
+        case "partial":         return .warning
+        default:                return .neutral
+        }
+    }
+
+    static func description(for state: TargetSyncState?) -> String {
+        guard let s = state else { return "No sync has run yet." }
+        if let err = s.lastError, !err.isEmpty { return err }
+        var parts = ["Pulled \(s.lastPullCount ?? 0)", "pushed \(s.lastPushCount ?? 0)"]
+        if (s.lastConflicts ?? 0) > 0 { parts.append("\(s.lastConflicts!) conflict(s)") }
+        return parts.joined(separator: ", ") + "."
+    }
+
+    static func timestamp(_ iso: String?) -> String {
+        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return "—" }
+        let f = DateFormatter()
+        f.dateFormat = "MMM d, yyyy — HH:mm:ss"
+        return f.string(from: date)
     }
 }
 
@@ -812,12 +1004,19 @@ private struct ConflictsPane: View {
     }
 }
 
-/// Settings → Targets list (spec S6). Renders every connection with its
-/// handle / platform / label / vault folder and per-row Edit + Disconnect
-/// actions, reusing the same controller methods the dashboard cards call.
+/// Settings pane — the single home for preferences (folded in from the retired
+/// standalone Settings window). Holds GLOBAL app prefs only: vault folder,
+/// launch-at-login, license, and the OAuth broker override. Per-connection
+/// settings (sync mode, conflict strategy, content kinds) live on each
+/// connection, not here. Below the prefs: the connections list (Edit / Test /
+/// Disconnect), reusing the same controller methods the cards call.
 private struct SettingsPane: View {
     @ObservedObject var controller: DashboardController
+    @ObservedObject var license: LicenseController
     @Environment(\.openWindow) private var openWindow
+
+    @State private var oauthDraft: String = ""
+    @State private var keyInput: String = ""
 
     var body: some View {
         ScrollView {
@@ -826,42 +1025,177 @@ private struct SettingsPane: View {
                     .font(DS.Typography.headlineMd())
                     .foregroundStyle(DS.Text.primary)
 
-                VStack(alignment: .leading, spacing: DS.Space.unit) {
-                    Text("Connections")
-                        .font(DS.Typography.headlineSm())
-                        .foregroundStyle(DS.Text.primary)
-                    Text("Every CMS target Specter syncs. Each lives in its own vault folder.")
-                        .font(DS.Typography.bodySm())
-                        .foregroundStyle(DS.Text.muted)
-                }
-
-                if controller.targets.isEmpty {
-                    Text("No connections yet. Add one from the Targets tab.")
-                        .font(DS.Typography.bodyMd())
-                        .foregroundStyle(DS.Text.muted)
-                        .dsCard(padding: DS.Space.gutter)
-                } else {
-                    VStack(spacing: DS.Space.unit * 1.5) {
-                        ForEach(controller.targets) { target in
-                            TargetSettingsRow(
-                                target: target,
-                                onEdit: {
-                                    if let windowId = controller.prepareEdit(handle: target.id) {
-                                        NSApplication.shared.setActivationPolicy(.regular)
-                                        NSApplication.shared.activate(ignoringOtherApps: true)
-                                        openWindow(id: windowId)
-                                    }
-                                },
-                                onTest:   { controller.testTarget(handle: target.id) },
-                                onRemove: { controller.removeTarget(handle: target.id) }
-                            )
-                        }
-                    }
-                }
+                generalSection
+                licenseSection
+                advancedSection
+                connectionsSection
             }
             .padding(DS.Space.section)
             .frame(maxWidth: DS.Space.containerMax, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .onAppear { oauthDraft = controller.oauthBaseUrl }
+    }
+
+    // MARK: General
+
+    private var generalSection: some View {
+        VStack(alignment: .leading, spacing: DS.Space.gutter) {
+            sectionHeader("General", "Where Specter keeps your markdown and how it launches.")
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Local folder").font(DS.Typography.labelMd()).foregroundStyle(DS.Text.muted)
+                    Text(controller.vaultPath.isEmpty ? "No folder chosen" : controller.vaultPath)
+                        .font(DS.Typography.bodySm())
+                        .foregroundStyle(controller.vaultPath.isEmpty ? DS.Text.outline : DS.Text.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+                Spacer()
+                Button("Choose Folder…") { controller.pickVaultFolder() }
+                    .buttonStyle(DSGhostButtonStyle())
+            }
+
+            Toggle(isOn: Binding(
+                get: { LoginItem.isEnabled },
+                set: { _ in LoginItem.toggle() }
+            )) {
+                Text("Launch at login").font(DS.Typography.bodyMd()).foregroundStyle(DS.Text.primary)
+            }
+            .toggleStyle(.switch)
+
+            HStack(spacing: DS.Space.unit * 2) {
+                Button("Open Sync Folder") { controller.openSyncFolder() }
+                    .buttonStyle(DSGhostButtonStyle())
+                    .disabled(controller.vaultPath.isEmpty)
+                Button("View Logs") { controller.openLogs() }
+                    .buttonStyle(DSGhostButtonStyle())
+            }
+        }
+        .dsCard(padding: DS.Space.gutter)
+    }
+
+    // MARK: License
+
+    @ViewBuilder
+    private var licenseSection: some View {
+        VStack(alignment: .leading, spacing: DS.Space.gutter) {
+            sectionHeader("License", "Activation is per-Mac. Syncing requires Specter Pro.")
+            switch license.state {
+            case .loading:
+                HStack { ProgressView().controlSize(.small); Text("Loading license…").foregroundStyle(DS.Text.muted) }
+            case .failed(let msg):
+                Text(msg).font(DS.Typography.bodySm()).foregroundStyle(DS.Status.error)
+            case .loaded(let status):
+                if status.tier == "pro" { proView(status) } else { freeView }
+            }
+        }
+        .dsCard(padding: DS.Space.gutter)
+    }
+
+    private var freeView: some View {
+        VStack(alignment: .leading, spacing: DS.Space.unit * 2) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Not activated").font(DS.Typography.headlineSm()).foregroundStyle(DS.Text.primary)
+                    Text("Activate Specter Pro to upload changes.")
+                        .font(DS.Typography.bodySm()).foregroundStyle(DS.Text.muted)
+                }
+                Spacer()
+                Button("Subscribe — $99/year") { NSWorkspace.shared.open(MenuActions.buyProURL) }
+                    .buttonStyle(DSPrimaryButtonStyle())
+            }
+            HStack {
+                SecureField("XXXX-XXXX-XXXX-XXXX", text: $keyInput).textFieldStyle(.roundedBorder)
+                Button {
+                    let key = keyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !key.isEmpty else { return }
+                    license.activate(key: key) { ok in if ok { keyInput = "" } }
+                } label: {
+                    if license.isActivating { ProgressView().controlSize(.small) } else { Text("Activate") }
+                }
+                .buttonStyle(DSGhostButtonStyle())
+                .disabled(keyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || license.isActivating)
+            }
+            if let err = license.lastError {
+                Text(err).font(DS.Typography.bodySm()).foregroundStyle(DS.Status.error).lineLimit(3)
+            }
+        }
+    }
+
+    private func proView(_ status: LicenseStatus) -> some View {
+        VStack(alignment: .leading, spacing: DS.Space.unit * 2) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        DSPill(text: "● PRO", tone: .success)
+                        Text(status.key ?? "—").font(DS.Typography.bodySm()).foregroundStyle(DS.Text.muted)
+                    }
+                    if let validated = status.lastValidatedAt {
+                        Text("Last validated: \(validated)")
+                            .font(DS.Typography.bodySm()).foregroundStyle(DS.Text.outline)
+                    }
+                }
+                Spacer()
+                Button("Deactivate on this Mac") { license.deactivate { _ in } }
+                    .buttonStyle(DSGhostButtonStyle(tone: DS.Status.error))
+            }
+        }
+    }
+
+    // MARK: Advanced
+
+    private var advancedSection: some View {
+        VStack(alignment: .leading, spacing: DS.Space.gutter) {
+            sectionHeader("Advanced", "Leave blank to use Specter's hosted OAuth (recommended).")
+            HStack {
+                TextField(OAuthController.defaultBaseURLString, text: $oauthDraft)
+                    .textFieldStyle(.roundedBorder)
+                Button("Save") { controller.saveOAuthBaseUrl(oauthDraft) }
+                    .buttonStyle(DSGhostButtonStyle())
+                    .disabled(oauthDraft.trimmingCharacters(in: .whitespacesAndNewlines) == controller.oauthBaseUrl)
+            }
+        }
+        .dsCard(padding: DS.Space.gutter)
+    }
+
+    // MARK: Connections
+
+    private var connectionsSection: some View {
+        VStack(alignment: .leading, spacing: DS.Space.gutter) {
+            sectionHeader("Connections", "Every CMS Specter syncs. Each lives in its own vault folder.")
+            if controller.targets.isEmpty {
+                Text("No connections yet. Add one from the Connections tab.")
+                    .font(DS.Typography.bodyMd())
+                    .foregroundStyle(DS.Text.muted)
+            } else {
+                VStack(spacing: DS.Space.unit * 1.5) {
+                    ForEach(controller.targets) { target in
+                        TargetSettingsRow(
+                            target: target,
+                            onEdit: {
+                                if let windowId = controller.prepareEdit(handle: target.id) {
+                                    NSApplication.shared.setActivationPolicy(.regular)
+                                    NSApplication.shared.activate(ignoringOtherApps: true)
+                                    openWindow(id: windowId)
+                                }
+                            },
+                            onTest:   { controller.testTarget(handle: target.id) },
+                            onRemove: { controller.removeTarget(handle: target.id) }
+                        )
+                    }
+                }
+            }
+        }
+        .dsCard(padding: DS.Space.gutter)
+    }
+
+    private func sectionHeader(_ title: String, _ subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: DS.Space.unit) {
+            Text(title).font(DS.Typography.headlineSm()).foregroundStyle(DS.Text.primary)
+            Text(subtitle).font(DS.Typography.bodySm()).foregroundStyle(DS.Text.muted)
         }
     }
 }
@@ -930,7 +1264,7 @@ private struct PlaceholderPane: View {
 
 #if DEBUG
 #Preview {
-    DashboardView(controller: DashboardController(), preview: PreviewController())
+    DashboardView(controller: DashboardController(), preview: PreviewController(), license: LicenseController())
         .frame(width: 1100, height: 720)
 }
 #endif

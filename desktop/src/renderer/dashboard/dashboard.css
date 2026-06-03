@@ -108,7 +108,51 @@ body.ds { margin: 0; height: 100%; }
 .pill-warning { background: color-mix(in srgb, var(--ds-warning) 18%, transparent); color: var(--ds-warning); }
 .pill-error   { background: color-mix(in srgb, var(--ds-error)   18%, transparent); color: var(--ds-error); }
 .pill-accent  { background: var(--ds-accent-soft); color: var(--ds-accent-on-dark); }
-.pill-neutral { background: var(--ds-bg-elevated); color: var(--ds-text-muted); border: 1px solid var(--ds-border-subtle); }
+.pill-neutral { background: var(--ds-bg-raised); color: var(--ds-text-muted); border: 1px solid var(--ds-border-subtle); }
+
+/* ── Status pills (mockup: dot + uppercase letter-spaced label, ~10% tint) ── */
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: var(--ds-radius-pill);
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-sm);
+  font-weight: var(--ds-fw-label);
+  letter-spacing: var(--ds-ls-label-sm);
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.status-pill .pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+}
+
+.status-pill.tone-success {
+  color: var(--ds-success);
+  background: color-mix(in srgb, var(--ds-success) 12%, transparent);
+}
+.status-pill.tone-warning,
+.status-pill.tone-error {
+  color: var(--ds-warning);
+  background: color-mix(in srgb, var(--ds-warning) 12%, transparent);
+}
+.status-pill.tone-accent {
+  color: var(--ds-accent-on-dark);
+  background: var(--ds-accent-soft);
+}
+.status-pill.tone-neutral {
+  color: var(--ds-text-muted);
+  background: color-mix(in srgb, var(--ds-text-muted) 12%, transparent);
+}
 
 /* ── Main ────────────────────────────────────────────────────────────────── */
 
@@ -129,6 +173,45 @@ body.ds { margin: 0; height: 100%; }
   align-items: center;
   justify-content: space-between;
   margin-bottom: var(--ds-gutter);
+}
+
+.pane-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── Grid / List view toggle ───────────────────────────────────────────── */
+
+.view-toggle {
+  display: inline-flex;
+  background: var(--ds-bg-elevated);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius);
+  padding: 2px;
+  gap: 2px;
+}
+
+.view-toggle-btn {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  border-radius: var(--ds-radius-sm);
+  color: var(--ds-text-muted);
+  font-family: var(--ds-font-mono);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.view-toggle-btn:hover { background: var(--ds-bg-hover); }
+
+.view-toggle-btn.is-active {
+  background: var(--ds-accent);
+  color: var(--ds-text-on-primary);
 }
 
 .rule {
@@ -222,28 +305,88 @@ body.ds { margin: 0; height: 100%; }
   border-color: color-mix(in srgb, var(--ds-warning) 40%, var(--ds-border-subtle));
 }
 
-/* ── Sync Card ───────────────────────────────────────────────────────────── */
+.btn-ghost.icon-btn {
+  padding: 6px 8px;
+  line-height: 1;
+}
+
+/* ── Platform icon tile ────────────────────────────────────────────────── */
+
+.platform-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--ds-radius);
+  background: var(--ds-bg-raised);
+  border: 1px solid var(--ds-border-subtle);
+  color: var(--ds-text-primary);
+  font-family: var(--ds-font-sans);
+  font-size: 18px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.platform-tile.sm {
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
+  border-radius: var(--ds-radius-sm);
+}
+
+.platform-tile[data-platform="ghost"]     { color: var(--ds-text-primary); }
+.platform-tile[data-platform="shopify"]   { color: var(--ds-success); }
+.platform-tile[data-platform="wordpress"] { color: var(--ds-accent-on-dark); }
+.platform-tile[data-platform="webflow"]   { color: var(--ds-tertiary); }
+
+/* ── Sync Card (mockup: icon tile + pill, identity, divider, last sync) ──── */
 
 .card-list {
   display: flex;
   flex-direction: column;
-  gap: var(--ds-section-gap);
+  gap: var(--ds-gutter);
+}
+
+/* Grid view: responsive 2-up. */
+.card-list[data-view="grid"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--ds-gutter);
 }
 
 .sync-card {
   background: var(--ds-bg-elevated);
   border: 1px solid var(--ds-border-subtle);
   border-radius: var(--ds-radius-lg);
-  padding: var(--ds-gutter);
+  padding: 32px;
   display: flex;
   flex-direction: column;
+  gap: 14px;
+  transition: border-color 120ms ease;
+}
+
+.sync-card:hover {
+  border-color: var(--ds-accent);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
 }
 
-.card-top {
+.card-identity {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.card-divider {
+  height: 1px;
+  background: var(--ds-border-subtle);
+  margin: 2px 0;
 }
 
 .status-dot {
@@ -267,10 +410,8 @@ body.ds { margin: 0; height: 100%; }
 .card-url {
   font-family: var(--ds-font-mono);
   font-size: var(--ds-fs-label-md);
-  color: var(--ds-text-outline);
+  color: var(--ds-text-muted);
 }
-
-.card-top-right { margin-left: auto; }
 
 .auto-toggle {
   all: unset;
@@ -344,10 +485,55 @@ body.ds { margin: 0; height: 100%; }
 
 .card-actions .spacer { flex: 1; }
 
+/* ── Connections list view (compact one-line rows) ─────────────────────── */
+
+.conn-row {
+  display: grid;
+  grid-template-columns: 26px minmax(80px, max-content) minmax(0, 1fr) max-content max-content auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  background: var(--ds-bg-elevated);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius);
+  transition: border-color 120ms ease;
+}
+
+.conn-row:hover { border-color: var(--ds-accent); }
+
+.conn-row .conn-name {
+  font-family: var(--ds-font-sans);
+  font-weight: var(--ds-fw-headline-sm);
+  color: var(--ds-text-primary);
+}
+
+.conn-row .conn-url {
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-md);
+  color: var(--ds-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conn-row .conn-last {
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-sm);
+  color: var(--ds-text-muted);
+  white-space: nowrap;
+}
+
+.conn-row .conn-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 /* ── Empty state ────────────────────────────────────────────────────────── */
-/* Shown when `config.targets[]` is empty (clean install before onboarding).
-   Onboarding still kicks off via the tray "Preferences…" → onboarding flow,
-   so we deliberately don't put a CTA here. */
+/* Shown when `config.targets[]` is empty. The empty card points the user at the
+   "+ Add target" control in the pane header. First-run onboarding still kicks
+   off from the tray "Open Specter…" item when no config exists yet. */
 
 .sync-card.empty-state {
   padding: calc(var(--ds-gutter) * 2);
@@ -486,4 +672,233 @@ body.ds { margin: 0; height: 100%; }
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+/* ── Settings pane: global preferences ─────────────────────────────────────── */
+
+.settings-group {
+  margin-top: var(--ds-section-gap);
+  padding-top: var(--ds-gutter);
+  border-top: 1px solid var(--ds-border-subtle);
+}
+
+.settings-group:first-of-type {
+  border-top: none;
+}
+
+.settings-group-title {
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-md);
+  font-weight: var(--ds-fw-label);
+  letter-spacing: var(--ds-ls-label-md);
+  text-transform: uppercase;
+  color: var(--ds-text-outline);
+  margin-bottom: 12px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 0;
+}
+
+.settings-row-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.settings-row-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-row-name {
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-body-md);
+  color: var(--ds-text-primary);
+}
+
+.settings-row-help {
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-body-sm);
+  color: var(--ds-text-muted);
+  margin-top: 2px;
+  word-break: break-word;
+}
+
+.settings-field-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-field-row input[type="text"],
+.settings-field-row input[type="password"] {
+  flex: 1;
+  min-width: 0;
+  background: var(--ds-bg-input);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius);
+  color: var(--ds-text-primary);
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-md);
+  padding: 8px 10px;
+}
+
+.settings-field-row input:focus {
+  outline: none;
+  border-color: var(--ds-accent);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-status {
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-md);
+  color: var(--ds-success);
+  margin-top: 8px;
+}
+
+.settings-status.error { color: var(--ds-error); }
+.settings-status.hidden { display: none; }
+
+.settings-license .ds-muted { margin-bottom: 8px; }
+
+.ds-link {
+  color: var(--ds-accent-on-dark);
+  text-decoration: none;
+}
+.ds-link:hover { text-decoration: underline; }
+
+/* The Launch-at-Login toggle reuses the card .auto-toggle look but sits on the
+   panel background, so give the "off" state a visible outline-tone label. */
+.settings-row .auto-toggle { color: var(--ds-text-muted); }
+.settings-row .auto-toggle.on { color: var(--ds-text-primary); }
+
+/* ── Sync Logs view (filterable event table) ───────────────────────────── */
+
+.logs-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: var(--ds-gutter);
+  flex-wrap: wrap;
+}
+
+.filter-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  all: unset;
+  cursor: pointer;
+  padding: 5px 12px;
+  border-radius: var(--ds-radius-pill);
+  border: 1px solid var(--ds-border-subtle);
+  background: var(--ds-bg-elevated);
+  color: var(--ds-text-muted);
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-sm);
+  letter-spacing: var(--ds-ls-label-sm);
+  line-height: 1;
+}
+
+.filter-chip:hover { background: var(--ds-bg-hover); }
+
+.filter-chip.is-active {
+  background: var(--ds-accent);
+  border-color: var(--ds-accent);
+  color: var(--ds-text-on-primary);
+}
+
+.logs-search {
+  flex: 0 1 240px;
+  min-width: 0;
+  background: var(--ds-bg-input);
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius);
+  color: var(--ds-text-primary);
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-md);
+  padding: 8px 12px;
+}
+
+.logs-search:focus {
+  outline: none;
+  border-color: var(--ds-accent);
+}
+
+.logs-table {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ds-border-subtle);
+  border-radius: var(--ds-radius-md);
+  overflow: hidden;
+}
+
+.logs-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, max-content) minmax(0, 2fr) minmax(100px, max-content);
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--ds-border-subtle);
+}
+
+.logs-row:last-child { border-bottom: none; }
+
+.logs-row:not(.logs-head):hover { background: var(--ds-bg-hover); }
+
+.logs-head {
+  background: var(--ds-bg-panel);
+}
+
+.logs-head span {
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-sm);
+  font-weight: var(--ds-fw-label);
+  letter-spacing: var(--ds-ls-label-sm);
+  text-transform: uppercase;
+  color: var(--ds-text-outline);
+}
+
+.logs-platform {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--ds-font-sans);
+  font-weight: var(--ds-fw-headline-sm);
+  color: var(--ds-text-primary);
+}
+
+.logs-desc {
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-body-md);
+  color: var(--ds-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logs-ts {
+  font-family: var(--ds-font-mono);
+  font-size: var(--ds-fs-label-sm);
+  color: var(--ds-text-muted);
+  white-space: nowrap;
+}
+
+.logs-empty {
+  padding: 32px 16px;
+  text-align: center;
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-fs-body-md);
+  color: var(--ds-text-muted);
 }

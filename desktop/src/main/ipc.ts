@@ -7,7 +7,12 @@
  * Channels:
  *   config:read                 → AppConfig | null
  *   config:write                → { ok: true } | { ok: false; error: string }
+ *   config:write-globals        → { ok: true } | { ok: false; error: string }
  *   config:exists               → boolean
+ *   autolaunch:get              → boolean
+ *   autolaunch:set              → { ok: boolean; enabled?: boolean; error?: string }
+ *   shell:openSyncFolder        → { ok: boolean; error?: string }
+ *   shell:openLogs              → { ok: boolean }
  *   config:set-target-sync-mode → { ok: true } | { ok: false; error: string }
  *   config:remove-target        → { ok: true } | { ok: false; error: string }
  *   config:edit-target          → { ok: boolean; error?: string }
@@ -31,9 +36,11 @@
 
 import { ipcMain, dialog, BrowserWindow, shell, type IpcMainInvokeEvent } from 'electron';
 import { spawnSync } from 'child_process';
+import path from 'path';
 import {
   readConfig,
   writeConfig,
+  writeConfigAtomic,
   AppConfig,
   ContentKind,
   configExists,
@@ -47,7 +54,8 @@ import {
 import { readState } from './state.js';
 import { buildDashboardSnapshot } from './dashboard-snapshot.js';
 import { DaemonSupervisor } from './supervisor.js';
-import { daemonBundlePath } from './paths.js';
+import { daemonBundlePath, logFilePath } from './paths.js';
+import { autoLaunch } from './autolaunch.js';
 import {
   openWindow,
   setPendingPreviewTarget,
@@ -75,6 +83,77 @@ export function registerIpcHandlers(sup: DaemonSupervisor): void {
     } catch (err) {
       return { ok: false, error: (err as Error).message };
     }
+  });
+
+  // ── Global preferences (dashboard Settings pane) ───────────────────────────
+  //
+  // Writes ONLY the global, non-per-connection fields (local vault folder +
+  // OAuth override). Reads the current config and merges, passing `targets[]`
+  // through VERBATIM so we never trip writeConfig's legacy single-Ghost edit
+  // branch. Restarts the supervised daemon (matching the old Settings window's
+  // save → restart behavior) so the watcher picks up a new vault path.
+
+  handleTrusted(
+    'config:write-globals',
+    (_event, patch: { vaultPath?: string; oauthBaseUrl?: string }) => {
+      try {
+        const current = readConfig();
+        if (!current) {
+          return { ok: false, error: 'No config on disk yet.' };
+        }
+        const next: AppConfig = { ...current };
+        if (typeof patch?.vaultPath === 'string' && patch.vaultPath.trim()) {
+          next.vaultPath = patch.vaultPath;
+        }
+        // oauthBaseUrl: empty string clears it (back to hosted default).
+        if (patch && 'oauthBaseUrl' in patch) {
+          const v = (patch.oauthBaseUrl ?? '').trim();
+          if (v) next.oauthBaseUrl = patch.oauthBaseUrl;
+          else delete next.oauthBaseUrl;
+        }
+        // Pass targets through verbatim (writeConfigAtomic, not writeConfig) so
+        // the per-connection list is never re-synthesized from legacy fields.
+        writeConfigAtomic(next);
+        if (supervisor && supervisor.isRunning) {
+          try { supervisor.restart(); } catch { /* best-effort */ }
+        }
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: (err as Error).message };
+      }
+    },
+  );
+
+  // ── Launch at Login (moved from tray) ──────────────────────────────────────
+
+  handleTrusted('autolaunch:get', () => autoLaunch.isEnabled());
+
+  handleTrusted('autolaunch:set', (_event, enabled: boolean) => {
+    try {
+      autoLaunch.set(!!enabled);
+      return { ok: true, enabled: autoLaunch.isEnabled() };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  });
+
+  // ── Open sync folder / logs (moved from tray) ──────────────────────────────
+
+  handleTrusted('shell:openSyncFolder', () => {
+    const config = readConfig();
+    const folder = config?.vaultPath
+      ? config.syncFolderPath
+        ? path.join(config.vaultPath, config.syncFolderPath)
+        : config.vaultPath
+      : null;
+    if (!folder) return { ok: false, error: 'No sync folder configured yet.' };
+    void shell.openPath(folder);
+    return { ok: true };
+  });
+
+  handleTrusted('shell:openLogs', () => {
+    void shell.openPath(logFilePath());
+    return { ok: true };
   });
 
   // ── Ghost connection test ─────────────────────────────────────────────────
@@ -383,7 +462,9 @@ export function registerIpcHandlers(sup: DaemonSupervisor): void {
       setPendingConnect(null);
     }
     if (name === 'settings-or-onboarding') {
-      openWindow(configExists() ? 'settings' : 'onboarding');
+      // The standalone Settings window is retired — preferences live in the
+      // dashboard. Route to the dashboard (or onboarding on a fresh install).
+      openWindow(configExists() ? 'dashboard' : 'onboarding');
     } else {
       openWindow(name);
     }

@@ -352,37 +352,42 @@ hr, .divider {
  * ══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  /* Surfaces (tonal layering, no shadows) */
-  --ds-bg-base:        #111416;
-  --ds-bg-panel:       #1d2022;
-  --ds-bg-elevated:    #232629;
-  --ds-bg-input:       #0c0f10;
+  /* Surfaces (tonal layering, no shadows)
+   * Palette: dark-dashboard mockup (stitch_spectersync redesign).
+   * App surface near-black-green #020A07, cards #1B221F (raised #242C28),
+   * blue accent #0A66FF. See tasks/spec-app-redesign-ux-overhaul.md §5. */
+  --ds-bg-base:        #020A07;
+  --ds-bg-panel:       #0B120F;
+  --ds-bg-elevated:    #1B221F;
+  --ds-bg-raised:      #242C28;
+  --ds-bg-input:       #0B120F;
   --ds-bg-hover:       rgba(255, 255, 255, 0.04);
   --ds-bg-pressed:     rgba(255, 255, 255, 0.08);
-  --ds-border-subtle: #34393E;
-  --ds-border-strong: #484553;
+  --ds-border-subtle: #2D3632;
+  --ds-border-strong: #3A4540;
+  --ds-border-faint:  rgba(255, 255, 255, 0.10);
 
   /* Text */
-  --ds-text-primary:  #e1e2e5;
-  --ds-text-muted:    #cac4d5;
-  --ds-text-outline:  #938e9e;
-  --ds-text-on-primary: #efe8ff;
+  --ds-text-primary:  #FFFFFF;
+  --ds-text-muted:    #A1ADA8;
+  --ds-text-outline:  #A1ADA8;
+  --ds-text-on-primary: #FFFFFF;
 
   /* Accent */
-  --ds-accent:           #6E56CF;
-  --ds-accent-on-dark:   #cbbeff;
-  --ds-accent-fixed:     #4a2ea9;
-  --ds-accent-soft:      rgba(110, 86, 207, 0.16);
-  --ds-tertiary:         #ffb964;
+  --ds-accent:           #0A66FF;
+  --ds-accent-on-dark:   #5B95FF;
+  --ds-accent-fixed:     #0A66FF;
+  --ds-accent-soft:      rgba(10, 102, 255, 0.16);
+  --ds-tertiary:         #FF6B35;
 
   /* Status */
-  --ds-success:  #30A46C;
-  --ds-warning:  #FFB224;
-  --ds-error:    #E54D2E;
+  --ds-success:  #23C48E;
+  --ds-warning:  #FF6B35;
+  --ds-error:    #FF6B35;
 
   /* Typography */
-  --ds-font-sans: "Hanken Grotesk", -apple-system, "Segoe UI", system-ui, sans-serif;
-  --ds-font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", "Consolas", monospace;
+  --ds-font-sans: -apple-system, "Segoe UI", system-ui, sans-serif;
+  --ds-font-mono: "SF Mono", "Cascadia Code", "Consolas", ui-monospace, monospace;
 
   --ds-fs-headline-lg: 32px;
   --ds-fs-headline-md: 24px;
@@ -422,7 +427,7 @@ hr, .divider {
   --ds-radius-sm:    4px;
   --ds-radius:       8px;   /* buttons, inputs */
   --ds-radius-md:   12px;
-  --ds-radius-lg:   16px;   /* cards, modals */
+  --ds-radius-lg:   12px;   /* cards, modals — mockup large radius */
   --ds-radius-pill: 9999px;
 }
 

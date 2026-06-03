@@ -5,6 +5,7 @@ import { watchCommand } from './watch.js';
 import { statusCommand } from './status.js';
 import { installCommand, uninstallCommand } from './install.js';
 import { resolveCommand } from './resolve.js';
+import { migrateCommand } from './migrate.js';
 import { testCommand } from './test.js';
 import { kindsCommand } from './kinds.js';
 import { registerTargetCommands } from './target.js';
@@ -88,6 +89,13 @@ export async function main(): Promise<void> {
     .command('status')
     .description('Show last sync time, status, and config path')
     .action(statusCommand);
+
+  program
+    .command('migrate')
+    .description('Move legacy single-target files into per-connection handle folders (one-time)')
+    .option('--dry-run', 'Show what would move without touching disk')
+    .option('--json', 'Emit machine-readable JSON')
+    .action(migrateCommand);
 
   registerTargetCommands(program);
 

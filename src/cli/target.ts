@@ -88,7 +88,7 @@ export async function targetAddCommand(): Promise<void> {
     await saveConfig(config);
 
     console.log(`\nAdded target "${handle}" (${platform}).`);
-    console.log(`Folder: ${effectiveRoot(target, config.targets.length > 1) || '<vault root>'}`);
+    console.log(`Folder: ${effectiveRoot(target)}`);
     console.log(`Run \`ghost-sync sync --target ${handle}\` to verify.`);
   } finally {
     rl.close();
@@ -101,10 +101,9 @@ export async function targetListCommand(): Promise<void> {
     console.log('No targets configured. Run `ghost-sync init` or `ghost-sync target add`.');
     return;
   }
-  const isMulti = config.targets.length > 1;
   console.log(`Targets (${config.targets.length}):`);
   for (const t of config.targets) {
-    const root = effectiveRoot(t, isMulti) || '<vault root>';
+    const root = effectiveRoot(t);
     console.log(`  • ${t.handle}  [${t.adapter.platform}]  "${t.label}"`);
     console.log(`      folder: ${root}   mode: ${t.syncMode}`);
   }

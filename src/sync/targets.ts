@@ -1,10 +1,12 @@
 /**
  * Per-target vault layout helpers.
  *
- * Single-target configs (every shipped Ghost user after the auto-synthesis)
- * keep using the legacy `syncFolderPath` directly — no extra folder level.
- * Multi-target configs prefix each target's effective root with the target
- * handle so two CMSes can share one vault without colliding.
+ * EVERY target's posts live under its own handle-named folder, regardless of
+ * how many targets are configured. This keeps a single-target vault and a
+ * multi-target vault laid out the same way, so connecting a second CMS never
+ * relocates the first one's files (the v0.3.x "single target at vault root"
+ * behavior caused exactly that confusion). Legacy single-target vaults are
+ * brought up to this layout once by `migrateVaultLayout` (src/sync/migrate.ts).
  */
 
 import path from 'node:path';
@@ -13,18 +15,29 @@ import { GhostSyncSettings } from '../types.js';
 import { normalizePath } from '../vault.js';
 
 /**
- * The vault-root-relative folder a target's posts live under.
+ * The vault-root-relative folder a target's posts live under: always
+ * `handle/syncFolderPath` (or just `handle` when no subfolder is set). The
+ * handle namespace is what lets multiple CMSes co-exist in one vault and is
+ * applied uniformly so the layout is independent of target count.
  *
- * - Single target: `syncFolderPath` exactly (back-compat with v0.3.x).
- * - Multi target:  `handle/syncFolderPath` (or just `handle` if no subfolder).
- *
- * The handle namespace is what lets two CMSes co-exist in one vault. We do
- * NOT include the handle for single-target configs — that would silently
- * relocate every shipped user's existing files.
+ * `legacyRoot` computes the OLD (pre-namespacing) location and exists only for
+ * the one-time migration, which needs to know where files used to live.
  */
-export function effectiveRoot(target: TargetConfig, isMulti: boolean): string {
+export function effectiveRoot(target: TargetConfig): string {
   const sub = normalizePath(target.syncFolderPath ?? '');
-  if (!isMulti) return sub;
+  const handle = target.handle;
+  return sub ? `${handle}/${sub}` : handle;
+}
+
+/**
+ * Where a target's files lived under the pre-v0.6 layout, given whether the
+ * config was multi-target at the time. Single-target configs stored files at
+ * the bare `syncFolderPath` (often the vault root); multi-target configs were
+ * already namespaced. Used only by the layout migration.
+ */
+export function legacyRoot(target: TargetConfig, wasMulti: boolean): string {
+  const sub = normalizePath(target.syncFolderPath ?? '');
+  if (!wasMulti) return sub;
   const handle = target.handle;
   return sub ? `${handle}/${sub}` : handle;
 }
@@ -38,12 +51,11 @@ export function effectiveRoot(target: TargetConfig, isMulti: boolean): string {
  */
 export function targetSyncSettings(
   target: TargetConfig,
-  isMulti: boolean,
 ): GhostSyncSettings {
   return {
     ghostUrl: '',
     adminApiKey: '',
-    syncFolderPath: effectiveRoot(target, isMulti),
+    syncFolderPath: effectiveRoot(target),
     pullDrafts: target.pullDrafts,
     pullPublished: target.pullPublished,
     conflictStrategy: target.conflictStrategy,
@@ -64,11 +76,10 @@ export function targetSyncSettings(
 export function routeToTarget(
   relPath: string,
   targets: TargetConfig[],
-  isMulti: boolean,
 ): TargetConfig | null {
   const norm = normalizePath(relPath);
   const ranked = targets
-    .map((t) => ({ target: t, root: effectiveRoot(t, isMulti) }))
+    .map((t) => ({ target: t, root: effectiveRoot(t) }))
     .sort((a, b) => b.root.length - a.root.length);
   for (const { target, root } of ranked) {
     if (root === '') return target;
@@ -85,7 +96,6 @@ export function routeAbsoluteToTarget(
   absPath: string,
   vaultRoot: string,
   targets: TargetConfig[],
-  isMulti: boolean,
 ): { target: TargetConfig; relPath: string } | null {
   const resolvedRoot = path.resolve(vaultRoot);
   const resolved = path.resolve(absPath);
@@ -93,6 +103,6 @@ export function routeAbsoluteToTarget(
     return null;
   }
   const rel = path.relative(resolvedRoot, resolved).split(path.sep).join('/');
-  const target = routeToTarget(rel, targets, isMulti);
+  const target = routeToTarget(rel, targets);
   return target ? { target, relPath: rel } : null;
 }

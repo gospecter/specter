@@ -1,28 +1,19 @@
 /**
  * Tray icon + context menu.
  *
- * Menu structure mirrors mac/Sources/Specter/App.swift MenuView:
+ * The tray is a STATUS surface, not a control panel (spec
+ * tasks/spec-app-redesign-ux-overhaul.md §4). Everything else — Sync/Pull/Push,
+ * Preview, Preferences, Launch at Login, Open Folder, View Logs, Buy Pro — now
+ * lives in the dashboard window. Menu structure:
  *
  *   Specter [Manual] [Not activated]
  *   Status / message line
  *   Last sync: Xm ago
  *   ─────────────────────
- *   Sync Now
- *   Pull from Ghost
- *   Push to Ghost
- *   Preview Sync…
- *   ─────────────────────
- *   Open Specter…       (Dashboard window — mirrors Mac menu-bar item)
- *   Preferences…
- *   Launch at Login  /  Disable Launch at Login
- *   ─────────────────────
- *   Buy Specter Pro…   (unlicensed users only)
- *   ─────────────────────
- *   Open Sync Folder
- *   View Logs
+ *   Open Specter…       (Dashboard window — the single home)
  *   Check for Updates…
  *   ─────────────────────
- *   Quit Specter
+ *   Quit Specter        ⌘Q
  *
  * On Linux, setContextMenu must be re-called after any mutation because
  * libappindicator doesn't support dynamic updates. We always rebuild from
@@ -40,24 +31,17 @@
 import {
   Tray,
   Menu,
-  shell,
   app,
-  Notification,
   nativeImage,
-  dialog,
 } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { spawn } from 'child_process';
 import { DaemonSupervisor } from './supervisor.js';
 import { readState, lastSyncRelative } from './state.js';
 import { readConfig, configExists } from './config.js';
 import { checkForUpdates, canCheckForUpdates } from './updater.js';
-import { daemonBundlePath, logFilePath, licenseStatePath } from './paths.js';
+import { licenseStatePath } from './paths.js';
 import { openWindow } from './windows.js';
-import { autoLaunch } from './autolaunch.js';
-
-const BUY_PRO_URL = 'https://spectersync.com/#buy';
 
 let tray: Tray | null = null;
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -114,15 +98,8 @@ export function rebuildMenu(tray: Tray, supervisor: DaemonSupervisor): void {
   const statusLabel = buildStatusLabel(supervisor, state, isManual);
   const lastSync = lastSyncRelative(state.lastSyncAt);
 
-  const syncFolder =
-    config?.vaultPath
-      ? config.syncFolderPath
-        ? path.join(config.vaultPath, config.syncFolderPath)
-        : config.vaultPath
-      : null;
-
   const menu = Menu.buildFromTemplate([
-    // ── Header ────────────────────────────────────────────────────────────
+    // ── Header (status surface) ───────────────────────────────────────────
     {
       label: buildHeaderLabel(isManual, isFree),
       enabled: false,
@@ -137,74 +114,12 @@ export function rebuildMenu(tray: Tray, supervisor: DaemonSupervisor): void {
     },
     { type: 'separator' },
 
-    // ── Sync actions ──────────────────────────────────────────────────────
-    {
-      label: 'Sync Now',
-      click: () => runDaemonCommand('sync', supervisor),
-    },
-    {
-      label: 'Pull from Ghost',
-      click: () => runDaemonCommand('pull', supervisor),
-    },
-    {
-      label: 'Push to Ghost',
-      click: () => runDaemonCommand('push', supervisor),
-    },
-    {
-      label: 'Preview Sync…',
-      click: () => openWindow('preview'),
-    },
-    { type: 'separator' },
-
     // ── App windows ───────────────────────────────────────────────────────
     {
-      // Mirrors the Mac menu-bar "Open Specter…" item; opens the Dashboard
-      // window. Spec: tasks/spec-multi-cms-ui.md S3.
+      // The single home for every control and preference. When no config
+      // exists yet we route to onboarding instead so first-run still works.
       label: 'Open Specter…',
-      click: () => openWindow('dashboard'),
-    },
-    {
-      label: 'Preferences…',
-      click: () => {
-        if (configExists()) {
-          openWindow('settings');
-        } else {
-          openWindow('onboarding');
-        }
-      },
-    },
-    {
-      label: autoLaunch.isEnabled()
-        ? 'Disable Launch at Login'
-        : 'Launch at Login',
-      click: () => autoLaunch.toggle(),
-    },
-
-    // ── Buy Pro (unlicensed users only) ───────────────────────────────────
-    ...(isFree
-      ? [
-          { type: 'separator' as const },
-          {
-            label: 'Subscribe to Specter Pro',
-            click: () => shell.openExternal(BUY_PRO_URL),
-          },
-        ]
-      : []),
-
-    { type: 'separator' },
-
-    // ── Utilities ─────────────────────────────────────────────────────────
-    ...(syncFolder
-      ? [
-          {
-            label: 'Open Sync Folder',
-            click: () => shell.openPath(syncFolder!),
-          },
-        ]
-      : []),
-    {
-      label: 'View Logs',
-      click: () => shell.openPath(logFilePath()),
+      click: () => openWindow(configExists() ? 'dashboard' : 'onboarding'),
     },
     {
       label: 'Check for Updates…',
@@ -245,70 +160,6 @@ function buildStatusLabel(
   if (!supervisor.isRunning) return 'Daemon stopped';
   if (state.lastSyncMessage) return state.lastSyncMessage;
   return isManual ? 'Pulling on schedule only' : 'Watching for changes…';
-}
-
-// ── One-shot CLI runner (mirrors MenuActions.run in App.swift) ─────────────
-
-function runDaemonCommand(
-  cmd: 'sync' | 'pull' | 'push',
-  supervisor: DaemonSupervisor,
-): void {
-  notify('Specter', `Running ${cmd}…`);
-
-  const daemonPath = daemonBundlePath();
-  const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
-
-  const child = spawn(process.execPath, [daemonPath, cmd], {
-    env,
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  let stderr = '';
-  child.stderr?.on('data', (d: Buffer) => (stderr += d.toString()));
-
-  child.on('exit', (code) => {
-    const state = readState();
-    if (code === 0) {
-      const msg = state.lastSyncMessage ?? 'Done';
-      notify('Specter', `${cmd}: ${msg}`);
-    } else if (isLicenseLimitError(stderr)) {
-      notify(
-        'Specter Pro required',
-        'Activate your license key to sync.',
-      );
-      showLicenseLimitDialog();
-    } else {
-      const errMsg = stderr.trim() || `Exit code ${code}`;
-      notify('Specter failed', errMsg);
-    }
-    // Rebuild menu so "last sync" updates.
-    if (tray) rebuildMenu(tray, supervisor);
-  });
-}
-
-function isLicenseLimitError(raw: string): boolean {
-  return raw.includes('Specter Pro required');
-}
-
-function showLicenseLimitDialog(): void {
-  dialog
-    .showMessageBox({
-      type: 'info',
-      title: 'Specter Pro is required',
-      message: 'Activate your license key to sync.',
-      detail: 'The app can be installed without a key, but syncing requires an active Specter Pro subscription.',
-      buttons: ['Upgrade to Specter Pro', 'Not Now'],
-      defaultId: 0,
-    })
-    .then(({ response }) => {
-      if (response === 0) shell.openExternal(BUY_PRO_URL);
-    });
-}
-
-function notify(title: string, body: string): void {
-  if (Notification.isSupported()) {
-    new Notification({ title, body }).show();
-  }
 }
 
 // ── License helpers ────────────────────────────────────────────────────────

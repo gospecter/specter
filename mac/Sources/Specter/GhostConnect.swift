@@ -24,6 +24,12 @@ final class GhostConnectController: ObservableObject {
     /// in-place upsert (no new handle minted) and the window's title/CTA copy.
     @Published var editingHandle: String?
 
+    /// Credentials as loaded for an edit. Used to tell a label/content-kind-only
+    /// edit (creds untouched → already validated, save without re-test) from a
+    /// credential change (must re-test).
+    private var loadedGhostUrl = ""
+    private var loadedAdminApiKey = ""
+
     var isEditing: Bool { editingHandle != nil }
 
     var canTest: Bool {
@@ -32,9 +38,22 @@ final class GhostConnectController: ObservableObject {
         !isTesting
     }
 
+    /// True when editing an existing target whose credentials are unchanged from
+    /// what was loaded — the connection was already validated when it was added,
+    /// so a label or content-kind tweak shouldn't demand a fresh Test.
+    private var isUnchangedCredentialEdit: Bool {
+        isEditing &&
+        ghostUrl.trimmingCharacters(in: .whitespacesAndNewlines) == loadedGhostUrl &&
+        adminApiKey.trimmingCharacters(in: .whitespacesAndNewlines) == loadedAdminApiKey
+    }
+
     var canSave: Bool {
         if case .ok = testResult { return true }
-        return false
+        // Editing an already-connected blog: allow saving label / content-kind
+        // changes without forcing a re-test. Changing the URL or key flips this
+        // false (and onChange resets testResult), so credential edits still
+        // require a successful Test before Save re-enables.
+        return isUnchangedCredentialEdit
     }
 
     func reset() {
@@ -46,6 +65,8 @@ final class GhostConnectController: ObservableObject {
         saveError = nil
         isTesting = false
         editingHandle = nil
+        loadedGhostUrl = ""
+        loadedAdminApiKey = ""
     }
 
     /// Pre-fill the form from an existing Ghost target for the Edit flow.
@@ -55,6 +76,8 @@ final class GhostConnectController: ObservableObject {
         label = target.label
         ghostUrl = g.ghostUrl
         adminApiKey = g.adminApiKey
+        loadedGhostUrl = g.ghostUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        loadedAdminApiKey = g.adminApiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         contentKinds = target.contentKinds   // edit: pre-fill from current.
         testResult = .untested
         saveError = nil

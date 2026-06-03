@@ -14,14 +14,17 @@ function isEnabled(): boolean {
   return app.getLoginItemSettings().openAtLogin;
 }
 
-function toggle(): void {
-  const current = isEnabled();
+function set(enabled: boolean): void {
   app.setLoginItemSettings({
-    openAtLogin: !current,
+    openAtLogin: enabled,
     // On Windows, pass the app path explicitly for NSIS installs.
     path: process.execPath,
     args: ['--hidden'],
   });
 }
 
-export const autoLaunch = { isEnabled, toggle };
+function toggle(): void {
+  set(!isEnabled());
+}
+
+export const autoLaunch = { isEnabled, set, toggle };

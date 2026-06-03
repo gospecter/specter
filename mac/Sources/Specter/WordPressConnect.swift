@@ -24,6 +24,14 @@ final class WordPressConnectController: ObservableObject {
     /// handle minted) and the window's title/CTA copy.
     @Published var editingHandle: String?
 
+    /// Credentials as loaded for an edit. Used to tell a label/content-kind-only
+    /// edit (creds untouched → already validated, save without re-test) from a
+    /// credential change (must re-test). Password compared space-stripped to
+    /// match how it is sent.
+    private var loadedSiteUrl = ""
+    private var loadedUsername = ""
+    private var loadedAppPassword = ""
+
     var isEditing: Bool { editingHandle != nil }
 
     var canTest: Bool {
@@ -33,9 +41,23 @@ final class WordPressConnectController: ObservableObject {
         !isTesting
     }
 
+    /// True when editing an existing target whose credentials are unchanged from
+    /// what was loaded — already validated when added, so a label or content-kind
+    /// tweak shouldn't demand a fresh Test.
+    private var isUnchangedCredentialEdit: Bool {
+        isEditing &&
+        siteUrl.trimmingCharacters(in: .whitespacesAndNewlines) == loadedSiteUrl &&
+        username.trimmingCharacters(in: .whitespacesAndNewlines) == loadedUsername &&
+        appPassword.replacingOccurrences(of: " ", with: "") == loadedAppPassword
+    }
+
     var canSave: Bool {
         if case .ok = testResult { return true }
-        return false
+        // Editing an already-connected site: allow saving label / content-kind
+        // changes without forcing a re-test. Changing any credential flips this
+        // false (and onChange resets testResult), so credential edits still
+        // require a successful Test before Save re-enables.
+        return isUnchangedCredentialEdit
     }
 
     func reset() {
@@ -48,6 +70,9 @@ final class WordPressConnectController: ObservableObject {
         saveError = nil
         isTesting = false
         editingHandle = nil
+        loadedSiteUrl = ""
+        loadedUsername = ""
+        loadedAppPassword = ""
     }
 
     /// Pre-fill the form from an existing WordPress target for the Edit flow.
@@ -58,6 +83,9 @@ final class WordPressConnectController: ObservableObject {
         siteUrl = w.siteUrl
         username = w.username
         appPassword = w.appPassword
+        loadedSiteUrl = w.siteUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+        loadedUsername = w.username.trimmingCharacters(in: .whitespacesAndNewlines)
+        loadedAppPassword = w.appPassword.replacingOccurrences(of: " ", with: "")
         contentKinds = target.contentKinds   // edit: pre-fill from current.
         testResult = .untested
         saveError = nil
