@@ -17,7 +17,8 @@ SpecterSync has two editions with different goals.
 | Official Windows/Linux installers | No | Planned/Yes |
 | Automatic updates | Manual pull/build | Yes |
 | License activation | No | Yes |
-| Managed Shopify OAuth/refresh | No | Yes |
+| Hosted OAuth broker (Shopify, Webflow) | Self-host your own ([guide](self-hosted-oauth.md)) | Yes, turnkey |
+| Managed Shopify token refresh | Self-host | Yes |
 | Hosted AI transformation workflows | No | Yes |
 | CMS-aware safe apply checks | Basic/local | Advanced/service-backed |
 | Support | Community/best effort | Included |

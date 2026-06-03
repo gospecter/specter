@@ -41,6 +41,7 @@ import {
   setTargetContentKinds,
   upsertWordPressTarget,
   upsertGhostTarget,
+  upsertWebflowTarget,
   removeTarget,
 } from './config.js';
 import { readState } from './state.js';
@@ -171,6 +172,63 @@ export function registerIpcHandlers(sup: DaemonSupervisor): void {
       }
       try {
         upsertWordPressTarget(siteUrl, username, appPassword, label, contentKinds);
+        if (supervisor && supervisor.isRunning) {
+          try { supervisor.restart(); } catch { /* best-effort */ }
+        }
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: (err as Error).message };
+      }
+    },
+  );
+
+  // ── Webflow connection test + kinds + connect ────────────────────────────
+  //
+  // `test` is the ad-hoc check (no config write). `kinds` lists the site's live
+  // CMS collections as `webflow:<slug>` kinds so the form can render real
+  // checkboxes. `connect` upserts the Webflow target and restarts the daemon.
+  // The token is a bearer token from either auth path (pasted Site API token
+  // or OAuth access token).
+
+  handleTrusted('webflow:test', (_event, siteId: string, apiToken: string) => {
+    return runDaemonJson([
+      'test',
+      '--platform', 'webflow',
+      '--site-id', siteId,
+      '--api-token', apiToken,
+      '--json',
+    ]);
+  });
+
+  handleTrusted('webflow:kinds', (_event, siteId: string, apiToken: string) => {
+    return runDaemonJson([
+      'kinds',
+      '--platform', 'webflow',
+      '--site-id', siteId,
+      '--api-token', apiToken,
+      '--json',
+    ]);
+  });
+
+  handleTrusted(
+    'webflow:connect',
+    (
+      _event,
+      payload: {
+        siteId: string;
+        apiToken?: string;
+        accessToken?: string;
+        label?: string;
+        contentKinds?: ContentKind[];
+      },
+    ) => {
+      const { siteId, apiToken, accessToken, label, contentKinds } =
+        payload ?? ({} as typeof payload);
+      if (!siteId || (!apiToken && !accessToken)) {
+        return { ok: false, error: 'Missing Webflow site ID or token.' };
+      }
+      try {
+        upsertWebflowTarget(siteId, { apiToken, accessToken }, label, contentKinds);
         if (supervisor && supervisor.isRunning) {
           try { supervisor.restart(); } catch { /* best-effort */ }
         }
@@ -321,7 +379,7 @@ export function registerIpcHandlers(sup: DaemonSupervisor): void {
     }
     // Opening a connect window from the "+ Add target" menu is always a fresh
     // add — clear any stale edit prefill left by a prior `config:edit-target`.
-    if (name === 'ghost-connect' || name === 'wordpress-connect') {
+    if (name === 'ghost-connect' || name === 'wordpress-connect' || name === 'webflow-connect') {
       setPendingConnect(null);
     }
     if (name === 'settings-or-onboarding') {
@@ -391,6 +449,21 @@ export function registerIpcHandlers(sup: DaemonSupervisor): void {
       };
       setPendingConnect(prefill);
       openWindow('wordpress-connect');
+      return { ok: true };
+    }
+    if (target.adapter.platform === 'webflow') {
+      const prefill: PendingConnect = {
+        platform: 'webflow',
+        handle,
+        label: target.label,
+        contentKinds: target.contentKinds,
+        siteId: target.adapter.siteId,
+        // Only the pasted Site API token is editable in-app; an OAuth token is
+        // never surfaced back to the form (the user re-runs OAuth to rotate it).
+        apiToken: target.adapter.apiToken,
+      };
+      setPendingConnect(prefill);
+      openWindow('webflow-connect');
       return { ok: true };
     }
     // Shopify has no connect form (hosted OAuth). Its credentials can't be

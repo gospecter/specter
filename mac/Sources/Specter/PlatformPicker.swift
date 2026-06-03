@@ -4,7 +4,7 @@ import SwiftUI
 /// Used both by first-run onboarding and the "+ Add target" flow in settings.
 
 enum Platform: String, CaseIterable, Identifiable {
-    case ghost, shopify, wordpress
+    case ghost, shopify, wordpress, webflow
 
     var id: String { rawValue }
 
@@ -13,6 +13,7 @@ enum Platform: String, CaseIterable, Identifiable {
         case .ghost:     return "Ghost"
         case .shopify:   return "Shopify"
         case .wordpress: return "WordPress"
+        case .webflow:   return "Webflow"
         }
     }
 
@@ -22,12 +23,17 @@ enum Platform: String, CaseIterable, Identifiable {
         case .ghost:     return "Admin key paste"
         case .shopify:   return "OAuth"
         case .wordpress: return "One-click authorize"
+        case .webflow:   return "API token or OAuth"
         }
     }
 
     /// Initial glyph (placeholder until brand SVGs are bundled).
     var initial: String {
-        String(displayName.first!)
+        switch self {
+        // Disambiguate from WordPress's "W".
+        case .webflow: return "Wf"
+        default:       return String(displayName.first!)
+        }
     }
 
     /// Accent color for the tile glyph.
@@ -36,6 +42,7 @@ enum Platform: String, CaseIterable, Identifiable {
         case .ghost:     return DS.Text.primary
         case .shopify:   return DS.Status.success
         case .wordpress: return DS.Accent.onDark
+        case .webflow:   return DS.Accent.primary
         }
     }
 }

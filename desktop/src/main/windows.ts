@@ -47,7 +47,7 @@ export function consumePendingPreviewTarget(): string | null {
 // finishes (or a fresh "Add" flow overwrites it with null).
 
 export interface PendingConnect {
-  platform: 'ghost' | 'wordpress';
+  platform: 'ghost' | 'wordpress' | 'webflow';
   /** Present only when editing an existing target. */
   handle?: string;
   label?: string;
@@ -60,6 +60,9 @@ export interface PendingConnect {
   siteUrl?: string;
   username?: string;
   appPassword?: string;
+  // Webflow
+  siteId?: string;
+  apiToken?: string;
 }
 
 let pendingConnect: PendingConnect | null = null;

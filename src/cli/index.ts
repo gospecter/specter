@@ -6,6 +6,7 @@ import { statusCommand } from './status.js';
 import { installCommand, uninstallCommand } from './install.js';
 import { resolveCommand } from './resolve.js';
 import { testCommand } from './test.js';
+import { kindsCommand } from './kinds.js';
 import { registerTargetCommands } from './target.js';
 import {
   activateCommand as licenseActivate,
@@ -92,8 +93,8 @@ export async function main(): Promise<void> {
 
   program
     .command('test')
-    .description('Test connection to a CMS (Ghost, Shopify, WordPress)')
-    .option('--platform <platform>', 'Platform for ad-hoc check: ghost | wordpress | shopify')
+    .description('Test connection to a CMS (Ghost, Shopify, WordPress, Webflow)')
+    .option('--platform <platform>', 'Platform for ad-hoc check: ghost | wordpress | shopify | webflow')
     .option('--url <url>', 'Ghost URL to test')
     .option('--key <key>', 'Ghost Admin API key to test')
     .option('--site-url <url>', 'WordPress site URL (with --platform wordpress)')
@@ -102,9 +103,20 @@ export async function main(): Promise<void> {
     .option('--shop <shop>', 'Shopify store domain (with --platform shopify)')
     .option('--access-token <token>', 'Shopify Admin Access Token (with --platform shopify)')
     .option('--api-version <version>', 'Shopify API Version (with --platform shopify)')
+    .option('--site-id <id>', 'Webflow site ID (with --platform webflow)')
+    .option('--api-token <token>', 'Webflow site API token or OAuth token (with --platform webflow)')
     .option('--target <handle>', 'Test a specific saved target by handle')
     .option('--json', 'Emit JSON result for machine consumption')
     .action(testCommand);
+
+  program
+    .command('kinds')
+    .description('List content kinds for a platform (Webflow: live CMS collections)')
+    .option('--platform <platform>', 'Platform: ghost | wordpress | shopify | webflow')
+    .option('--site-id <id>', 'Webflow site ID (with --platform webflow)')
+    .option('--api-token <token>', 'Webflow site API token or OAuth token (with --platform webflow)')
+    .option('--json', 'Emit JSON result for machine consumption')
+    .action(kindsCommand);
 
   program
     .command('resolve')

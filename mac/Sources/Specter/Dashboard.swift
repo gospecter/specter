@@ -67,6 +67,7 @@ final class DashboardController: ObservableObject {
     weak var ghostConnect: GhostConnectController?
     weak var wordpressConnect: WordPressConnectController?
     weak var shopifyConnect: ShopifyConnectController?
+    weak var webflowConnect: WebflowConnectController?
 
     func configure(store: StatusStore, supervisor: DaemonSupervisor) {
         self.statusStore = store
@@ -78,13 +79,15 @@ final class DashboardController: ObservableObject {
         supervisor: DaemonSupervisor,
         ghostConnect: GhostConnectController,
         wordpressConnect: WordPressConnectController,
-        shopifyConnect: ShopifyConnectController
+        shopifyConnect: ShopifyConnectController,
+        webflowConnect: WebflowConnectController
     ) {
         self.statusStore = store
         self.supervisor = supervisor
         self.ghostConnect = ghostConnect
         self.wordpressConnect = wordpressConnect
         self.shopifyConnect = shopifyConnect
+        self.webflowConnect = webflowConnect
     }
 
     private var timer: Timer?
@@ -233,6 +236,9 @@ final class DashboardController: ObservableObject {
             // selection (and the label) are editable in-app.
             shopifyConnect?.loadForEditing(target)
             return "shopify-connect"
+        case .webflow:
+            webflowConnect?.loadForEditing(target)
+            return "webflow-connect"
         }
     }
 
@@ -340,6 +346,7 @@ final class DashboardController: ObservableObject {
         case .ghost:     return .ghost
         case .shopify:   return .shopify
         case .wordpress: return .wordpress
+        case .webflow:   return .webflow
         }
     }
 
@@ -351,6 +358,9 @@ final class DashboardController: ObservableObject {
             return !s.shop.isEmpty && !s.accessToken.isEmpty
         case .wordpress(let w):
             return !w.siteUrl.isEmpty && !w.username.isEmpty && !w.appPassword.isEmpty
+        case .webflow(let wf):
+            let hasToken = !(wf.apiToken ?? "").isEmpty || !(wf.accessToken ?? "").isEmpty
+            return !wf.siteId.isEmpty && hasToken
         }
     }
 
@@ -362,6 +372,8 @@ final class DashboardController: ObservableObject {
             return s.shop.isEmpty ? "—" : s.shop
         case .wordpress(let w):
             return displayHost(w.siteUrl)
+        case .webflow(let wf):
+            return wf.siteId.isEmpty ? "—" : "webflow:\(wf.siteId)"
         }
     }
 
@@ -604,6 +616,12 @@ private struct TargetsPane: View {
                             NSApplication.shared.setActivationPolicy(.regular)
                             NSApplication.shared.activate(ignoringOtherApps: true)
                             openWindow(id: "wordpress-connect")
+                        }
+                        Button("Webflow…") {
+                            controller.webflowConnect?.reset()
+                            NSApplication.shared.setActivationPolicy(.regular)
+                            NSApplication.shared.activate(ignoringOtherApps: true)
+                            openWindow(id: "webflow-connect")
                         }
                     }
                     .menuStyle(.borderlessButton)

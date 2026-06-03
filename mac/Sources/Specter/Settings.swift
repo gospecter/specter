@@ -142,6 +142,19 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                Section {
+                    TextField("OAuth server", text: Binding(
+                        get: { controller.draft.oauthBaseUrl ?? "" },
+                        set: { controller.draft.oauthBaseUrl =
+                            $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+                    ), prompt: Text(OAuthController.defaultBaseURLString))
+                    Text("Leave blank to use Specter's hosted OAuth (recommended). Self-hosters running their own OAuth broker can point Specter at it here.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } header: {
+                    Text("Advanced")
+                }
             }
             .formStyle(.grouped)
             .padding(.horizontal, 14)

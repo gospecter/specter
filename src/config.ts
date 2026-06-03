@@ -52,6 +52,18 @@ export interface DaemonConfig extends GhostSyncSettings {
   /** Debounce window (ms) for the file watcher before flushing changes. */
   watchDebounceMs: number;
   /**
+   * Origin of the OAuth broker the desktop shells use to run hosted OAuth
+   * flows (start → callback → token exchange). Read ONLY by the shells, never
+   * by the daemon — the daemon consumes the resulting token like any other.
+   *
+   * PRO ships pointing at the hosted broker (`https://spectersync.com`) so
+   * OAuth is turnkey. DIY users who want OAuth must register their own provider
+   * app and stand up their own broker, then set this to its origin; absent, the
+   * shells fall back to the hosted default. Optional so existing configs and
+   * pasted-token users need no migration.
+   */
+  oauthBaseUrl?: string;
+  /**
    * Multi-target list. Always present after `loadConfig()` (synthesized from
    * legacy fields if absent on disk). Always written to disk by `saveConfig`.
    */
@@ -181,12 +193,29 @@ export const PLATFORM_KINDS: Record<Platform, ContentKind[]> = {
   ghost: ['post', 'page'],
   wordpress: ['post', 'page'],
   shopify: ['article', 'page', 'product'],
+  // Webflow content kinds are dynamic — one `webflow:<collectionSlug>` kind per
+  // CMS collection on the site, enumerated at connect time (Phase 2). The static
+  // `post` base keeps `basePostKind('webflow')` and legacy-config migration sane
+  // until collection-driven kinds land.
+  webflow: ['post'],
 };
 
 /** The base post kind for a platform — what a legacy target (no explicit
  *  `contentKinds`) migrates to so existing post sync keeps working. */
 export function basePostKind(platform: Platform): ContentKind {
   return PLATFORM_KINDS[platform][0];
+}
+
+/** Whether a content kind is valid for a platform. Platforms with a fixed kind
+ *  set match against `PLATFORM_KINDS`; platforms with dynamic kinds (Webflow —
+ *  one `webflow:<collectionSlug>` per CMS collection) accept any kind carrying
+ *  their prefix, since the real set is the live site's collections and can't be
+ *  enumerated statically. Without this, dynamic kinds would be filtered out on
+ *  config load and the target would silently sync nothing. */
+export function isContentKindAllowed(platform: Platform, kind: ContentKind): boolean {
+  if ((PLATFORM_KINDS[platform] ?? []).includes(kind)) return true;
+  if (platform === 'webflow') return String(kind).startsWith('webflow:');
+  return false;
 }
 
 /** Normalize a target's `contentKinds`:
@@ -197,11 +226,11 @@ export function basePostKind(platform: Platform): ContentKind {
  *  Brand-new targets are created with an explicit list by the add/connect
  *  flows, so they never hit the legacy branch. */
 function normalizeContentKinds(target: TargetConfig): ContentKind[] {
-  const supported = PLATFORM_KINDS[target.adapter.platform] ?? ['post'];
+  const platform = target.adapter.platform;
   if (Array.isArray(target.contentKinds)) {
-    return target.contentKinds.filter((k) => supported.includes(k));
+    return target.contentKinds.filter((k) => isContentKindAllowed(platform, k));
   }
-  return [basePostKind(target.adapter.platform)];
+  return [basePostKind(platform)];
 }
 
 /**
@@ -299,6 +328,8 @@ export function defaultHandleBase(adapter: AdapterConfig): string {
       return adapter.siteUrl || 'wordpress';
     case 'shopify':
       return adapter.shop || 'shopify';
+    case 'webflow':
+      return adapter.siteId || 'webflow';
     default:
       return 'target';
   }

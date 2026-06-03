@@ -10,7 +10,7 @@
  * engine stay platform-agnostic.
  */
 
-export type Platform = 'ghost' | 'shopify' | 'wordpress';
+export type Platform = 'ghost' | 'shopify' | 'wordpress' | 'webflow';
 
 export type PostStatus = 'draft' | 'published' | 'scheduled';
 
@@ -19,7 +19,8 @@ export type ContentKind =
   | 'page'
   | 'article'
   | 'product'
-  | `wordpress:${string}`;
+  | `wordpress:${string}`
+  | `webflow:${string}`;
 
 /**
  * Optional "container" the post lives in. Shopify articles belong to a
@@ -162,6 +163,28 @@ export type AdapterConfig =
       username: string;
       /** Application Password — 24-char string (spaces stripped internally). */
       appPassword: string;
+    }
+  | {
+      platform: 'webflow';
+      /** Webflow site ID whose CMS collections are synced. */
+      siteId: string;
+      /** Site API token (Bearer) — the AGPL/DIY auth path. Paste a token from
+       *  the site's API access settings. */
+      apiToken?: string;
+      /** OAuth access token (PRO). Issued by the hosted OAuth flow
+       *  (`web/src/pages/api/oauth/webflow/`). Webflow OAuth tokens are
+       *  long-lived and non-expiring with no refresh token, so this is simply
+       *  another bearer token — used in preference to `apiToken`. The adapter
+       *  never branches on which produced the token. At least one of
+       *  `apiToken` / `accessToken` must be present. */
+      accessToken?: string;
+      /** Optional per-collection field-mapping overrides, keyed by collection
+       *  id. Omitted fields fall back to auto-detection (name → title,
+       *  slug → slug, first RichText field → body). */
+      fieldMap?: Record<
+        string,
+        { title?: string; slug?: string; body?: string; tags?: string }
+      >;
     };
 
 export class CmsApiError extends Error {

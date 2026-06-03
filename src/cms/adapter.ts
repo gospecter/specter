@@ -60,4 +60,10 @@ export interface CmsAdapter {
   /** Available containers (Shopify blogs). Flat platforms return a single
    *  synthetic container or an empty list. */
   listContainers(): Promise<RemoteContainer[]>;
+
+  /** Platforms whose content kinds are dynamic (Webflow: one kind per CMS
+   *  collection) implement this so the connect flow can offer the live kinds
+   *  for selection. Platforms with a fixed kind set omit it and callers fall
+   *  back to the static `PLATFORM_KINDS` table. */
+  listContentKinds?(): Promise<ContentKind[]>;
 }

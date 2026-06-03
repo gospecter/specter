@@ -12,7 +12,9 @@
               "type": "string",
               "enum": [
                 "ghost",
-                "shopify"
+                "shopify",
+                "wordpress",
+                "webflow"
               ]
             },
             "id": {

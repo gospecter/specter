@@ -90,6 +90,7 @@ body.ds {
 
 .tile-glyph.glyph-shopify   { color: var(--ds-success); }
 .tile-glyph.glyph-wordpress { color: var(--ds-accent-on-dark); }
+.tile-glyph.glyph-webflow   { color: #4353ff; font-size: 0.85em; }
 
 .tile-name {
   margin-top: auto;

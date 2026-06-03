@@ -62,6 +62,8 @@ public struct CMS: Equatable {
 public enum Platform: String, Equatable {
     case ghost
     case shopify
+    case webflow
+    case wordpress
 }
 
 public enum Status: String, Equatable {

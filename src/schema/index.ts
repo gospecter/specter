@@ -40,7 +40,7 @@ export type PostFrontmatterV1 = PostFrontmatter;
  */
 export interface PostFrontmatterV2 {
   cms: {
-    platform: 'ghost' | 'shopify';
+    platform: 'ghost' | 'shopify' | 'wordpress' | 'webflow';
     /** Native ID from the CMS — opaque to the daemon. */
     id: string;
     slug: string;

@@ -4,21 +4,35 @@
  * in Electron through the paths.ts import chain.
  */
 
-export type Platform = 'ghost' | 'shopify' | 'wordpress';
+export type Platform = 'ghost' | 'shopify' | 'wordpress' | 'webflow';
 
 /** Content kinds the daemon understands. Mirrors `ContentKind` in
- *  src/cms/types.ts (the open-ended `wordpress:${string}` variant is irrelevant
- *  to the desktop UI, which only offers the closed per-platform sets below). */
-export type ContentKind = 'post' | 'page' | 'article' | 'product';
+ *  src/cms/types.ts. Webflow kinds are dynamic (`webflow:<collectionSlug>`, one
+ *  per CMS collection); the closed sets below cover the fixed-kind platforms. */
+export type ContentKind = 'post' | 'page' | 'article' | 'product' | `webflow:${string}`;
 
 /** Content kinds each platform can sync, in the order the UI should offer them.
  *  First entry is the base post kind (the conservative legacy-migration
- *  default). Mirrors `PLATFORM_KINDS` in src/config.ts exactly. */
+ *  default). Mirrors `PLATFORM_KINDS` in src/config.ts exactly. Webflow's real
+ *  kinds are its live collections, enumerated at connect time; `['post']` is
+ *  just the legacy-migration base. */
 export const PLATFORM_KINDS: Record<Platform, ContentKind[]> = {
   ghost: ['post', 'page'],
   wordpress: ['post', 'page'],
   shopify: ['article', 'page', 'product'],
+  webflow: ['post'],
 };
+
+/** Whether a content kind is valid for a platform. Webflow accepts any kind
+ *  with its `webflow:` prefix (its real set is the live site's collections);
+ *  fixed-kind platforms match the static table. Mirrors `isContentKindAllowed`
+ *  in src/config.ts — without it dynamic kinds get filtered out and the target
+ *  silently syncs nothing. */
+export function isContentKindAllowed(platform: Platform, kind: ContentKind): boolean {
+  if (platformKinds(platform).includes(kind)) return true;
+  if (platform === 'webflow') return String(kind).startsWith('webflow:');
+  return false;
+}
 
 /** The kinds a platform can offer. Defensive fallback to `['post']` for an
  *  unknown platform string. */
@@ -40,11 +54,11 @@ export function baseKind(platform: Platform): ContentKind {
  *    pre-existing target keeps syncing posts and never silently goes dark.
  *  Matches the daemon's `normalizeContentKinds` in src/config.ts. */
 export function normalizeContentKinds(target: TargetConfig): ContentKind[] {
-  const supported = platformKinds(target.adapter.platform);
+  const platform = target.adapter.platform;
   if (Array.isArray(target.contentKinds)) {
-    return target.contentKinds.filter((k) => supported.includes(k));
+    return target.contentKinds.filter((k) => isContentKindAllowed(platform, k));
   }
-  return [baseKind(target.adapter.platform)];
+  return [baseKind(platform)];
 }
 
 export interface AdapterConfig {
@@ -63,6 +77,10 @@ export interface AdapterConfig {
   siteUrl?: string;
   username?: string;
   appPassword?: string;
+  // Webflow-specific
+  siteId?: string;
+  apiToken?: string;
+  fieldMap?: Record<string, { title?: string; slug?: string; body?: string; tags?: string }>;
 }
 
 export interface TargetConfig {
@@ -90,6 +108,11 @@ export interface AppConfig {
   conflictStrategy: 'ask' | 'keep_local' | 'keep_remote';
   syncMode: 'auto' | 'manual';
   watchDebounceMs: number;
+  /** Origin of the OAuth broker for hosted OAuth flows (Shopify, Webflow).
+   *  Optional: absent → hosted default (`https://spectersync.com`). PRO leaves
+   *  it unset; DIY users self-hosting a broker set it to their origin. Read by
+   *  the shell only — the daemon ignores it. See `oauthBaseUrl()` in oauth.ts. */
+  oauthBaseUrl?: string;
   targets?: TargetConfig[];
 }
 

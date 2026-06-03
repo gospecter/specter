@@ -119,6 +119,49 @@ enum ConnectionTester {
         ])
     }
 
+    /// Ad-hoc Webflow connection test. `apiToken` is a bearer token from either
+    /// auth path (pasted Site API token or OAuth token).
+    static func runWebflow(siteId: String, apiToken: String)
+        -> OnboardingController.TestResult
+    {
+        runDaemonTest(args: [
+            "test",
+            "--platform", "webflow",
+            "--site-id", siteId,
+            "--api-token", apiToken,
+            "--json",
+        ])
+    }
+
+    private struct KindsResponse: Decodable { let ok: Bool; let kinds: [String]? }
+
+    /// List a Webflow site's CMS collections as `webflow:<slug>` kinds. Returns
+    /// `nil` on failure so the form can fall back to manual entry / a retry.
+    static func runWebflowKinds(siteId: String, apiToken: String) -> [String]? {
+        guard let node = Paths.nodeBinary(), let entry = Paths.daemonEntry() else { return nil }
+        let task = Process()
+        task.executableURL = node
+        task.arguments = [entry.path, "kinds", "--platform", "webflow",
+                          "--site-id", siteId, "--api-token", apiToken, "--json"]
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (env["PATH"] ?? "/usr/bin:/bin")
+        task.environment = env
+        let out = Pipe()
+        task.standardOutput = out
+        task.standardError = Pipe()
+        do {
+            try task.run()
+            task.waitUntilExit()
+            let data = out.fileHandleForReading.readDataToEndOfFile()
+            guard let res = try? JSONDecoder().decode(KindsResponse.self, from: data), res.ok else {
+                return nil
+            }
+            return res.kinds ?? []
+        } catch {
+            return nil
+        }
+    }
+
     private static func runDaemonTest(args: [String]) -> OnboardingController.TestResult {
         guard let node = Paths.nodeBinary() else {
             return .failed("Node runtime not found.")

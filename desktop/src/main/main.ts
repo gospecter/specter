@@ -44,6 +44,7 @@ let previewWin: BrowserWindow | null = null;
 let dashboardWin: BrowserWindow | null = null;
 let wordpressConnectWin: BrowserWindow | null = null;
 let ghostConnectWin: BrowserWindow | null = null;
+let webflowConnectWin: BrowserWindow | null = null;
 const initialOAuthUrl = findOAuthUrl(process.argv);
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
@@ -77,6 +78,7 @@ app.whenReady().then(() => {
   registerWindowOpener('dashboard', openDashboardWindow);
   registerWindowOpener('wordpress-connect', openWordPressConnectWindow);
   registerWindowOpener('ghost-connect', openGhostConnectWindow);
+  registerWindowOpener('webflow-connect', openWebflowConnectWindow);
 
   createTray(supervisor);
   registerIpcHandlers(supervisor);
@@ -198,6 +200,19 @@ function openWordPressConnectWindow(): void {
   wordpressConnectWin = makeWindow('wordpress-connect', 560, 480);
   wordpressConnectWin.on('closed', () => {
     wordpressConnectWin = null;
+  });
+}
+
+function openWebflowConnectWindow(): void {
+  if (webflowConnectWin && !webflowConnectWin.isDestroyed()) {
+    webflowConnectWin.show();
+    webflowConnectWin.focus();
+    return;
+  }
+  // Matches the WordPress connect window footprint: 560×480.
+  webflowConnectWin = makeWindow('webflow-connect', 560, 480);
+  webflowConnectWin.on('closed', () => {
+    webflowConnectWin = null;
   });
 }
 

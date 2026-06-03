@@ -51,6 +51,10 @@
           "type": "number",
           "description": "Debounce window (ms) for the file watcher before flushing changes."
         },
+        "oauthBaseUrl": {
+          "type": "string",
+          "description": "Origin of the OAuth broker the desktop shells use to run hosted OAuth flows (start → callback → token exchange). Read ONLY by the shells, never by the daemon — the daemon consumes the resulting token like any other.\n\nPRO ships pointing at the hosted broker (`https://spectersync.com`) so OAuth is turnkey. DIY users who want OAuth must register their own provider app and stand up their own broker, then set this to its origin; absent, the shells fall back to the hosted default. Optional so existing configs and pasted-token users need no migration."
+        },
         "targets": {
           "type": "array",
           "items": {
@@ -226,6 +230,54 @@
             "siteUrl",
             "username",
             "appPassword"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "const": "webflow"
+            },
+            "siteId": {
+              "type": "string",
+              "description": "Webflow site ID whose CMS collections are synced."
+            },
+            "apiToken": {
+              "type": "string",
+              "description": "Site API token (Bearer) — the AGPL/DIY auth path. Paste a token from the site's API access settings."
+            },
+            "accessToken": {
+              "type": "string",
+              "description": "OAuth access token (PRO). Issued by the hosted OAuth flow (`web/src/pages/api/oauth/webflow/`). Webflow OAuth tokens are long-lived and non-expiring with no refresh token, so this is simply another bearer token — used in preference to `apiToken`. The adapter never branches on which produced the token. At least one of `apiToken` / `accessToken` must be present."
+            },
+            "fieldMap": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "type": "string"
+                  },
+                  "body": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "description": "Optional per-collection field-mapping overrides, keyed by collection id. Omitted fields fall back to auto-detection (name → title, slug → slug, first RichText field → body)."
+            }
+          },
+          "required": [
+            "platform",
+            "siteId"
           ],
           "additionalProperties": false
         }

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';" />
+  <title>Add Webflow site</title>
+  <link rel="stylesheet" href="../common.css" />
+  <link rel="stylesheet" href="webflow-connect.css" />
+</head>
+<body>
+  <main class="wf-connect">
+    <header>
+      <h1>Add a Webflow site</h1>
+      <p class="subtitle">Paste a Site API token, or finish an OAuth connection. Specter syncs your CMS collections to markdown.</p>
+    </header>
+
+    <section class="form">
+      <div id="wf-oauth-block" class="oauth-block">
+        <button id="btn-oauth" type="button" class="btn-primary">Connect with Webflow</button>
+        <p class="help">Authorize in your browser — Specter fills in the token and site for you. Or paste a Site API token below instead.</p>
+      </div>
+
+      <label class="field">
+        <span class="label">Label</span>
+        <input id="wf-label" type="text" placeholder="My site" autocomplete="off" />
+      </label>
+
+      <label class="field">
+        <span class="label">Site ID</span>
+        <input id="wf-site-id" type="text" placeholder="Webflow site ID" autocomplete="off" />
+      </label>
+
+      <label class="field">
+        <span class="label">API token</span>
+        <input id="wf-api-token" type="password" placeholder="Site API token or OAuth token" autocomplete="off" />
+      </label>
+
+      <p class="help">
+        <a id="wf-help-link" href="#">How to create a Webflow Site API token</a>
+      </p>
+
+      <fieldset class="field kinds-field">
+        <legend class="label">Collections to sync</legend>
+        <p class="kinds-help">Run Test Connection to load this site's CMS collections.</p>
+        <div id="wf-kinds" class="kinds-group"></div>
+      </fieldset>
+
+      <div class="test-row">
+        <button id="btn-test" type="button" disabled>Test Connection</button>
+        <span id="test-spinner" class="spinner hidden" aria-hidden="true"></span>
+        <span id="test-result" class="test-result"></span>
+      </div>
+    </section>
+
+    <p id="save-error" class="save-error hidden"></p>
+
+    <footer class="actions">
+      <button id="btn-cancel" type="button" class="btn-secondary">Cancel</button>
+      <button id="btn-connect" type="button" class="btn-primary" disabled>Connect</button>
+    </footer>
+  </main>
+
+  <script type="module" src="webflow-connect.js"></script>
+</body>
+</html>

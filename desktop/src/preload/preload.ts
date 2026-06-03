@@ -9,7 +9,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 
-export type ContentKind = 'post' | 'page' | 'article' | 'product';
+export type ContentKind = 'post' | 'page' | 'article' | 'product' | `webflow:${string}`;
 
 export interface AppConfig {
   ghostUrl: string;
@@ -21,6 +21,8 @@ export interface AppConfig {
   conflictStrategy: 'ask' | 'keep_local' | 'keep_remote';
   syncMode: 'auto' | 'manual';
   watchDebounceMs: number;
+  /** OAuth broker origin; absent → hosted default. Set by self-hosters. */
+  oauthBaseUrl?: string;
 }
 
 export interface ApiResult {
@@ -73,7 +75,7 @@ export interface PlanEntry {
  *  `config.targets[]` + `state.json`. */
 export interface DashboardTarget {
   id: string;
-  platform: 'ghost' | 'shopify' | 'wordpress';
+  platform: 'ghost' | 'shopify' | 'wordpress' | 'webflow';
   siteUrl: string;
   state: 'idle' | 'syncing' | 'conflict' | 'error' | 'disconnected';
   lastSyncedRelative?: string;
@@ -94,7 +96,7 @@ export interface DashboardSnapshot {
  *  pre-fill its form when editing an existing target. Mirrors `PendingConnect`
  *  in src/main/windows.ts. */
 export interface PendingConnect {
-  platform: 'ghost' | 'wordpress';
+  platform: 'ghost' | 'wordpress' | 'webflow';
   handle?: string;
   label?: string;
   contentKinds?: ContentKind[];
@@ -103,6 +105,8 @@ export interface PendingConnect {
   siteUrl?: string;
   username?: string;
   appPassword?: string;
+  siteId?: string;
+  apiToken?: string;
 }
 
 const api = {
@@ -157,6 +161,25 @@ const api = {
         siteUrl,
         username,
         appPassword,
+        label,
+        contentKinds,
+      }),
+  },
+  webflow: {
+    test: (siteId: string, apiToken: string): Promise<ApiResult> =>
+      ipcRenderer.invoke('webflow:test', siteId, apiToken),
+    kinds: (siteId: string, apiToken: string): Promise<{ ok: boolean; kinds?: ContentKind[]; error?: string }> =>
+      ipcRenderer.invoke('webflow:kinds', siteId, apiToken),
+    connect: (
+      siteId: string,
+      creds: { apiToken?: string; accessToken?: string },
+      label?: string,
+      contentKinds?: ContentKind[],
+    ): Promise<ApiResult> =>
+      ipcRenderer.invoke('webflow:connect', {
+        siteId,
+        apiToken: creds.apiToken,
+        accessToken: creds.accessToken,
         label,
         contentKinds,
       }),

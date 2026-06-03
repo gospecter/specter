@@ -14,6 +14,12 @@ public struct AdapterConfig: Equatable {
     public let adminAPIKey, ghostURL: String?
     public let platform: Platform
     /// Admin API access token (shpat_… for dev-store, OAuth token in prod).
+    ///
+    /// OAuth access token (PRO). Issued by the hosted OAuth flow
+    /// (`web/src/pages/api/oauth/webflow/`). Webflow OAuth tokens are long-lived and
+    /// non-expiring with no refresh token, so this is simply another bearer token — used in
+    /// preference to `apiToken`. The adapter never branches on which produced the token. At
+    /// least one of `apiToken` / `accessToken` must be present.
     public let accessToken: String?
     /// ISO timestamp when the access token expires.
     public let accessTokenExpiresAt: String?
@@ -31,8 +37,16 @@ public struct AdapterConfig: Equatable {
     public let siteURL: String?
     /// WordPress username.
     public let username: String?
+    /// Site API token (Bearer) — the AGPL/DIY auth path. Paste a token from the site's API
+    /// access settings.
+    public let apiToken: String?
+    /// Optional per-collection field-mapping overrides, keyed by collection id. Omitted fields
+    /// fall back to auto-detection (name → title, slug → slug, first RichText field → body).
+    public let fieldMap: [String: FieldMap]?
+    /// Webflow site ID whose CMS collections are synced.
+    public let siteID: String?
 
-    public init(adminAPIKey: String?, ghostURL: String?, platform: Platform, accessToken: String?, accessTokenExpiresAt: String?, apiVersion: String?, refreshToken: String?, refreshTokenExpiresAt: String?, shop: String?, appPassword: String?, siteURL: String?, username: String?) {
+    public init(adminAPIKey: String?, ghostURL: String?, platform: Platform, accessToken: String?, accessTokenExpiresAt: String?, apiVersion: String?, refreshToken: String?, refreshTokenExpiresAt: String?, shop: String?, appPassword: String?, siteURL: String?, username: String?, apiToken: String?, fieldMap: [String: FieldMap]?, siteID: String?) {
         self.adminAPIKey = adminAPIKey
         self.ghostURL = ghostURL
         self.platform = platform
@@ -45,11 +59,27 @@ public struct AdapterConfig: Equatable {
         self.appPassword = appPassword
         self.siteURL = siteURL
         self.username = username
+        self.apiToken = apiToken
+        self.fieldMap = fieldMap
+        self.siteID = siteID
+    }
+}
+
+// MARK: - FieldMap
+public struct FieldMap: Equatable {
+    public let body, slug, tags, title: String?
+
+    public init(body: String?, slug: String?, tags: String?, title: String?) {
+        self.body = body
+        self.slug = slug
+        self.tags = tags
+        self.title = title
     }
 }
 
 public enum Platform: String, Equatable {
     case ghost
     case shopify
+    case webflow
     case wordpress
 }

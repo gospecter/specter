@@ -13,7 +13,7 @@ import { platformKinds, normalizeContentKinds } from './config-merge.js';
 import type { DaemonState, TargetSyncState } from './state.js';
 import { lastSyncRelative } from './state.js';
 
-export type DashboardPlatform = 'ghost' | 'shopify' | 'wordpress';
+export type DashboardPlatform = 'ghost' | 'shopify' | 'wordpress' | 'webflow';
 export type DashboardState =
   | 'idle'
   | 'syncing'
@@ -124,6 +124,9 @@ function hasCredentials(adapter: AdapterConfig): boolean {
   if (adapter.platform === 'shopify') {
     return !!(adapter.shop && adapter.accessToken);
   }
+  if (adapter.platform === 'webflow') {
+    return !!(adapter.siteId && (adapter.apiToken || adapter.accessToken));
+  }
   return false;
 }
 
@@ -133,6 +136,9 @@ function siteUrlOf(adapter: AdapterConfig): string {
   }
   if (adapter.platform === 'shopify') {
     return adapter.shop && adapter.shop.length > 0 ? adapter.shop : '—';
+  }
+  if (adapter.platform === 'webflow') {
+    return adapter.siteId && adapter.siteId.length > 0 ? `webflow:${adapter.siteId}` : '—';
   }
   return '—';
 }

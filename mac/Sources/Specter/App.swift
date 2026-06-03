@@ -652,6 +652,8 @@ struct SpecterApp: App {
     @StateObject private var wordpressConnect = WordPressConnectController()
     @StateObject private var ghostConnect = GhostConnectController()
     @StateObject private var shopifyConnect = ShopifyConnectController()
+    @StateObject private var webflowConnect = WebflowConnectController()
+    @Environment(\.openWindow) private var openWindow
 
     init() {
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -682,12 +684,22 @@ struct SpecterApp: App {
                     dashboard.configure(store: store, supervisor: supervisor,
                                         ghostConnect: ghostConnect,
                                         wordpressConnect: wordpressConnect,
-                                        shopifyConnect: shopifyConnect)
+                                        shopifyConnect: shopifyConnect,
+                                        webflowConnect: webflowConnect)
                     OAuthController.shared.warnIfProtocolOwnerMismatch()
                     license.refresh()
                     if ConfigStore.exists && !supervisor.isRunning {
                         supervisor.start()
                     }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .specterWebflowOAuth)) { note in
+                    // Webflow OAuth completed: pre-fill the connect form with the
+                    // exchanged token and open it so the user picks the site.
+                    guard let token = note.userInfo?["token"] as? String else { return }
+                    webflowConnect.loadFromOAuth(token: token)
+                    NSApplication.shared.setActivationPolicy(.regular)
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                    openWindow(id: "webflow-connect")
                 }
         }
         .menuBarExtraStyle(.menu)
@@ -747,7 +759,8 @@ struct SpecterApp: App {
                     dashboard.configure(store: store, supervisor: supervisor,
                                         ghostConnect: ghostConnect,
                                         wordpressConnect: wordpressConnect,
-                                        shopifyConnect: shopifyConnect)
+                                        shopifyConnect: shopifyConnect,
+                                        webflowConnect: webflowConnect)
                     NSApplication.shared.setActivationPolicy(.regular)
                     NSApplication.shared.activate(ignoringOtherApps: true)
                 }
@@ -787,6 +800,35 @@ struct SpecterApp: App {
         .windowResizability(.contentSize)
         .commandsRemoved()
         .handlesExternalEvents(matching: ["wordpress-connect"])
+
+        Window("Add Webflow", id: "webflow-connect") {
+            WebflowConnectView(controller: webflowConnect) {
+                supervisor.restart()
+                dashboard.reload()
+                store.reload()
+                webflowConnect.reset()
+                if let window = NSApplication.shared.windows.first(where: { $0.title == "Add Webflow" }) {
+                    window.close()
+                }
+                NSApplication.shared.setActivationPolicy(.accessory)
+            } onCancel: {
+                webflowConnect.reset()
+                if let window = NSApplication.shared.windows.first(where: { $0.title == "Add Webflow" }) {
+                    window.close()
+                }
+                NSApplication.shared.setActivationPolicy(.accessory)
+            }
+            .onAppear {
+                NSApplication.shared.setActivationPolicy(.regular)
+                NSApplication.shared.activate(ignoringOtherApps: true)
+            }
+            .onDisappear {
+                NSApplication.shared.setActivationPolicy(.accessory)
+            }
+        }
+        .windowResizability(.contentSize)
+        .commandsRemoved()
+        .handlesExternalEvents(matching: ["webflow-connect"])
 
         Window("Add Ghost", id: "ghost-connect") {
             GhostConnectView(controller: ghostConnect) {

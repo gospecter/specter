@@ -28,6 +28,7 @@ import {
 import { effectiveRoot } from '../sync/targets.js';
 import {
   Ask,
+  availableContentKinds,
   promptAdapter,
   promptContentKinds,
   promptPlatform,
@@ -79,7 +80,8 @@ export async function targetAddCommand(): Promise<void> {
     );
     const handle = ensureUniqueHandle(handleBase, existingHandles);
 
-    const contentKinds = await promptContentKinds(ask, platform);
+    const available = await availableContentKinds(adapter);
+    const contentKinds = await promptContentKinds(ask, platform, [], available);
 
     const target: TargetConfig = { handle, ...settings, contentKinds, adapter };
     config.targets = upsertTarget(config.targets, target);
@@ -153,7 +155,13 @@ export async function targetEditCommand(handle: string): Promise<void> {
       },
       config.targets.length > 1,
     );
-    const contentKinds = await promptContentKinds(ask, current.adapter.platform, current.contentKinds);
+    const available = await availableContentKinds(adapter);
+    const contentKinds = await promptContentKinds(
+      ask,
+      current.adapter.platform,
+      current.contentKinds,
+      available,
+    );
     const updated: TargetConfig = { handle, ...settings, contentKinds, adapter };
     config.targets = upsertTarget(config.targets, updated);
     await saveConfig(config);

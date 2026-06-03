@@ -8,7 +8,7 @@
  * Update both files in lockstep when the API surface changes.
  */
 
-export type ContentKind = 'post' | 'page' | 'article' | 'product';
+export type ContentKind = 'post' | 'page' | 'article' | 'product' | `webflow:${string}`;
 
 export interface AppConfig {
   ghostUrl: string;
@@ -20,6 +20,8 @@ export interface AppConfig {
   conflictStrategy: 'ask' | 'keep_local' | 'keep_remote';
   syncMode: 'auto' | 'manual';
   watchDebounceMs: number;
+  /** OAuth broker origin; absent → hosted default. Set by self-hosters. */
+  oauthBaseUrl?: string;
 }
 
 export interface ApiResult {
@@ -68,7 +70,7 @@ export interface SyncPlan {
 
 export interface DashboardTarget {
   id: string;
-  platform: 'ghost' | 'shopify' | 'wordpress';
+  platform: 'ghost' | 'shopify' | 'wordpress' | 'webflow';
   siteUrl: string;
   state: 'idle' | 'syncing' | 'conflict' | 'error' | 'disconnected';
   lastSyncedRelative?: string;
@@ -84,7 +86,7 @@ export interface DashboardSnapshot {
 }
 
 export interface PendingConnect {
-  platform: 'ghost' | 'wordpress';
+  platform: 'ghost' | 'wordpress' | 'webflow';
   handle?: string;
   label?: string;
   contentKinds?: ContentKind[];
@@ -93,6 +95,8 @@ export interface PendingConnect {
   siteUrl?: string;
   username?: string;
   appPassword?: string;
+  siteId?: string;
+  apiToken?: string;
 }
 
 export interface SpecterApi {
@@ -133,6 +137,19 @@ export interface SpecterApi {
       siteUrl: string,
       username: string,
       appPassword: string,
+      label?: string,
+      contentKinds?: ContentKind[],
+    ) => Promise<ApiResult>;
+  };
+  webflow: {
+    test: (siteId: string, apiToken: string) => Promise<ApiResult>;
+    kinds: (
+      siteId: string,
+      apiToken: string,
+    ) => Promise<{ ok: boolean; kinds?: ContentKind[]; error?: string }>;
+    connect: (
+      siteId: string,
+      creds: { apiToken?: string; accessToken?: string },
       label?: string,
       contentKinds?: ContentKind[],
     ) => Promise<ApiResult>;

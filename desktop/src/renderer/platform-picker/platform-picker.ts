@@ -6,7 +6,7 @@
  * Wiring into the multi-platform onboarding flow lives in a follow-up.
  */
 
-type Platform = 'ghost' | 'shopify' | 'wordpress';
+type Platform = 'ghost' | 'shopify' | 'wordpress' | 'webflow';
 
 const tiles = document.querySelectorAll<HTMLButtonElement>('.tile');
 

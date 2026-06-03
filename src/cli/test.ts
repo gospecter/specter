@@ -3,7 +3,7 @@ import { loadConfig } from '../config.js';
 
 interface TestOptions {
   /** Platform discriminator for ad-hoc checks. Defaults to 'ghost' when --url/--key are passed. */
-  platform?: 'ghost' | 'shopify' | 'wordpress';
+  platform?: 'ghost' | 'shopify' | 'wordpress' | 'webflow';
   url?: string;
   key?: string;
   // WordPress ad-hoc flags
@@ -14,6 +14,9 @@ interface TestOptions {
   shop?: string;
   accessToken?: string;
   apiVersion?: string;
+  // Webflow ad-hoc flags
+  siteId?: string;
+  apiToken?: string;
   /** Test a specific target by handle (multi-target configs). */
   target?: string;
   json?: boolean;
@@ -45,6 +48,18 @@ export async function testCommand(options: TestOptions): Promise<void> {
         apiVersion: options.apiVersion,
       },
       'shopify',
+      options.json ?? false,
+    );
+    return;
+  }
+
+  // Ad-hoc Webflow check — bypass the saved config entirely. The OAuth token
+  // and a pasted Site API token are both bearer tokens, so `--api-token`
+  // accepts either.
+  if (options.platform === 'webflow' && options.siteId && options.apiToken) {
+    await runSingle(
+      { platform: 'webflow', siteId: options.siteId, apiToken: options.apiToken },
+      'webflow',
       options.json ?? false,
     );
     return;

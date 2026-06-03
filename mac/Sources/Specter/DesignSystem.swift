@@ -183,10 +183,17 @@ struct DSPrimaryButtonStyle: ButtonStyle {
 struct ContentKindSelector: View {
     let platform: Platform
     @Binding var selected: [String]
+    /// Overrides the static `ContentKinds.available(for:)` list — pass the live
+    /// kinds for platforms whose kinds are dynamic (Webflow collections).
+    var availableKinds: [String]? = nil
+
+    private var kinds: [String] {
+        availableKinds ?? ContentKinds.available(for: platform)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(ContentKinds.available(for: platform), id: \.self) { kind in
+            ForEach(kinds, id: \.self) { kind in
                 Toggle(isOn: binding(for: kind)) {
                     Text(label(for: kind))
                 }
@@ -215,7 +222,11 @@ struct ContentKindSelector: View {
     }
 
     private func label(for kind: String) -> String {
-        kind.prefix(1).uppercased() + kind.dropFirst() + "s"
+        // Dynamic Webflow kinds render their collection slug verbatim.
+        if kind.hasPrefix("webflow:") {
+            return String(kind.dropFirst("webflow:".count))
+        }
+        return kind.prefix(1).uppercased() + kind.dropFirst() + "s"
     }
 }
 

@@ -6,17 +6,18 @@
  * truth for the questions.
  */
 
+import { createAdapter } from '../cms/index.js';
 import { AdapterConfig, ContentKind } from '../cms/types.js';
 import { PLATFORM_KINDS, TargetConfig } from '../config.js';
 
 export type Ask = (question: string, fallback: string) => Promise<string>;
 
-export const PLATFORMS = ['ghost', 'wordpress', 'shopify'] as const;
+export const PLATFORMS = ['ghost', 'wordpress', 'shopify', 'webflow'] as const;
 export type Platform = (typeof PLATFORMS)[number];
 
 /** Ask which platform to configure, validating the answer. */
 export async function promptPlatform(ask: Ask, fallback: Platform = 'ghost'): Promise<Platform> {
-  const input = (await ask('Platform (ghost | wordpress | shopify)', fallback)).toLowerCase();
+  const input = (await ask('Platform (ghost | wordpress | shopify | webflow)', fallback)).toLowerCase();
   if (!(PLATFORMS as readonly string[]).includes(input)) {
     throw new Error(
       `Unknown platform '${input}'. Supported platforms: ${PLATFORMS.join(', ')}`,
@@ -63,6 +64,19 @@ export async function promptAdapter(
       appPassword: appPasswordRaw.replace(/\s+/g, ''),
     };
   }
+  if (platform === 'webflow') {
+    const siteId = await ask(
+      'Webflow site ID',
+      existing?.platform === 'webflow' ? existing.siteId : '',
+    );
+    // CLI configures the AGPL site-token path. The PRO OAuth flow is hosted
+    // (web/) and writes accessToken/refreshToken into the config directly.
+    const apiToken = await ask(
+      'Webflow site API token',
+      existing?.platform === 'webflow' ? (existing.apiToken ?? '') : '',
+    );
+    return { platform: 'webflow', siteId, apiToken };
+  }
   // shopify
   const shop = await ask(
     'Shopify shop domain (e.g. your-store.myshopify.com)',
@@ -80,17 +94,40 @@ export async function promptAdapter(
 }
 
 /**
+ * Resolve the content kinds a target can offer. Platforms with a fixed kind
+ * set use the static `PLATFORM_KINDS` table; platforms with dynamic kinds
+ * (Webflow — one kind per CMS collection) are queried live via the adapter's
+ * optional `listContentKinds()`. On a connection failure we warn and return an
+ * empty list so the connect flow can still proceed (the user re-runs once the
+ * token is valid) rather than offering a wrong static default.
+ */
+export async function availableContentKinds(adapter: AdapterConfig): Promise<ContentKind[]> {
+  const cms = createAdapter(adapter);
+  if (!cms.listContentKinds) return PLATFORM_KINDS[adapter.platform];
+  try {
+    return await cms.listContentKinds();
+  } catch (err) {
+    console.log(
+      `  ⚠️  Could not list ${adapter.platform} collections: ${(err as Error).message}`,
+    );
+    return [];
+  }
+}
+
+/**
  * Prompt for which content kinds this target should sync. Opt-in: the user
- * picks from the platform's available kinds; nothing is enabled implicitly.
- * `current` seeds the default answer (current selection when editing, empty
- * when adding). Returns the validated, platform-supported subset.
+ * picks from the available kinds; nothing is enabled implicitly. `current`
+ * seeds the default answer (current selection when editing, empty when adding).
+ * `available` overrides the static `PLATFORM_KINDS[platform]` set — pass the
+ * result of {@link availableContentKinds} for platforms with dynamic kinds.
+ * Returns the validated, available subset.
  */
 export async function promptContentKinds(
   ask: Ask,
   platform: Platform,
   current: ContentKind[] = [],
+  available: ContentKind[] = PLATFORM_KINDS[platform],
 ): Promise<ContentKind[]> {
-  const available = PLATFORM_KINDS[platform];
   const fallback = current.length > 0 ? current.join(',') : '';
   const answer = await ask(
     `Content to sync — comma-separated from [${available.join(', ')}] (blank = nothing)`,

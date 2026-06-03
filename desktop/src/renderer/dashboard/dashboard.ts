@@ -22,20 +22,28 @@ const PLATFORM_LABEL: Record<Platform, string> = {
   ghost: 'Ghost',
   shopify: 'Shopify',
   wordpress: 'WordPress',
+  webflow: 'Webflow',
 };
 
-// Pluralised human labels for the "Syncs: …" caption.
-const KIND_LABEL: Record<ContentKind, string> = {
+// Pluralised human labels for the "Syncs: …" caption. Only the fixed kinds are
+// listed; dynamic Webflow kinds (`webflow:<slug>`) fall back to their slug.
+const KIND_LABEL: Partial<Record<ContentKind, string>> = {
   post: 'posts',
   page: 'pages',
   article: 'articles',
   product: 'products',
 };
 
+/** Human label for a content kind — fixed kinds use KIND_LABEL; dynamic
+ *  Webflow kinds render their collection slug. */
+function kindLabel(kind: ContentKind): string {
+  return KIND_LABEL[kind] ?? String(kind).replace(/^webflow:/, '');
+}
+
 /** "Syncs: posts, pages" — or "Syncs: nothing" for an empty opt-in selection. */
 function kindsSummary(kinds: ContentKind[]): string {
   if (!kinds || kinds.length === 0) return 'Syncs: nothing';
-  return `Syncs: ${kinds.map((k) => KIND_LABEL[k] ?? k).join(', ')}`;
+  return `Syncs: ${kinds.map((k) => kindLabel(k)).join(', ')}`;
 }
 
 // ── Section switching ─────────────────────────────────────────────────────
@@ -518,6 +526,8 @@ if (addBtn && addMenu) {
         await window.api.shell.openExternal('https://spectersync.com/connect-shopify');
       } else if (target === 'wordpress') {
         await window.api.windows.open('wordpress-connect');
+      } else if (target === 'webflow') {
+        await window.api.windows.open('webflow-connect');
       }
     });
   });

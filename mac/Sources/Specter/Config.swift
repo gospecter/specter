@@ -20,6 +20,11 @@ struct DaemonConfig: Codable {
     /// "auto" (push on edit) or "manual" (watcher only pulls; user drives pushes).
     var syncMode: String = "auto"
     var watchDebounceMs: Int = 2000
+    /// Origin of the OAuth broker used for hosted OAuth flows (Shopify, Webflow).
+    /// Optional: nil → fall back to the hosted default (`https://spectersync.com`).
+    /// PRO leaves it nil; DIY users who self-host a broker set it to their origin.
+    /// See `OAuthController.baseURLString`.
+    var oauthBaseUrl: String? = nil
     /// Multi-target list. Optional in JSON for back-compat with v0.3.x configs.
     /// Always written by `ConfigStore.save` after v0.4.0.
     var targets: [TargetConfig]? = nil
@@ -40,6 +45,7 @@ struct DaemonConfig: Codable {
         conflictStrategy = try c.decodeIfPresent(String.self, forKey: .conflictStrategy) ?? "ask"
         syncMode = try c.decodeIfPresent(String.self, forKey: .syncMode) ?? "auto"
         watchDebounceMs = try c.decodeIfPresent(Int.self, forKey: .watchDebounceMs) ?? 2000
+        oauthBaseUrl = try c.decodeIfPresent(String.self, forKey: .oauthBaseUrl)
         targets = try c.decodeIfPresent([TargetConfig].self, forKey: .targets)
 
         // If targets is present and the first one is a Ghost target, project
@@ -67,6 +73,10 @@ enum ContentKinds {
         case .ghost:     return ["post", "page"]
         case .wordpress: return ["post", "page"]
         case .shopify:   return ["article", "page", "product"]
+        // Webflow kinds are dynamic (one `webflow:<collectionSlug>` per CMS
+        // collection, enumerated live at connect time). `["post"]` is only the
+        // legacy-migration base.
+        case .webflow:   return ["post"]
         }
     }
 
@@ -74,6 +84,17 @@ enum ContentKinds {
     /// existing post sync keeps working. = first entry of `available`.
     static func basePostKind(for platform: Platform) -> String {
         available(for: platform).first ?? "post"
+    }
+
+    /// Whether a kind is valid for a platform. Webflow accepts any `webflow:`
+    /// prefixed kind (its real set is the live site's collections); fixed-kind
+    /// platforms match the static table. Mirrors `isContentKindAllowed` in
+    /// src/config.ts — without it dynamic kinds get filtered out on load and the
+    /// target silently syncs nothing.
+    static func isAllowed(_ kind: String, for platform: Platform) -> Bool {
+        if available(for: platform).contains(kind) { return true }
+        if platform == .webflow { return kind.hasPrefix("webflow:") }
+        return false
     }
 
     /// Human label for a kind in list/summary copy (pluralized).
@@ -154,9 +175,8 @@ struct TargetConfig: Codable, Equatable {
         adapter = try c.decode(AdapterConfig.self, forKey: .adapter)
 
         let platform = adapter.platform
-        let supported = ContentKinds.available(for: platform)
         if let raw = try c.decodeIfPresent([String].self, forKey: .contentKinds) {
-            contentKinds = raw.filter { supported.contains($0) }
+            contentKinds = raw.filter { ContentKinds.isAllowed($0, for: platform) }
         } else {
             // Legacy target: migrate to the base post kind.
             contentKinds = [ContentKinds.basePostKind(for: platform)]
@@ -172,6 +192,7 @@ enum AdapterConfig: Codable, Equatable {
     case ghost(GhostAdapter)
     case shopify(ShopifyAdapter)
     case wordpress(WordPressAdapter)
+    case webflow(WebflowAdapter)
 
     struct GhostAdapter: Equatable {
         var ghostUrl: String
@@ -193,6 +214,16 @@ enum AdapterConfig: Codable, Equatable {
         var appPassword: String
     }
 
+    struct WebflowAdapter: Equatable {
+        var siteId: String
+        /// Pasted Site API token (DIY). Optional because an OAuth target may
+        /// carry only `accessToken`.
+        var apiToken: String?
+        /// OAuth access token (PRO). Webflow tokens are long-lived / non-expiring
+        /// with no refresh token, so this is just another bearer token.
+        var accessToken: String?
+    }
+
     /// The `Platform` this adapter belongs to — used to resolve available
     /// content kinds and the legacy-migration base kind.
     var platform: Platform {
@@ -200,6 +231,7 @@ enum AdapterConfig: Codable, Equatable {
         case .ghost:     return .ghost
         case .shopify:   return .shopify
         case .wordpress: return .wordpress
+        case .webflow:   return .webflow
         }
     }
 
@@ -207,6 +239,7 @@ enum AdapterConfig: Codable, Equatable {
         case platform, ghostUrl, adminApiKey, shop, accessToken, refreshToken
         case accessTokenExpiresAt, refreshTokenExpiresAt, apiVersion
         case siteUrl, username, appPassword
+        case siteId, apiToken
     }
 
     init(from decoder: Decoder) throws {
@@ -232,6 +265,12 @@ enum AdapterConfig: Codable, Equatable {
                 siteUrl: try c.decode(String.self, forKey: .siteUrl),
                 username: try c.decode(String.self, forKey: .username),
                 appPassword: try c.decode(String.self, forKey: .appPassword)
+            ))
+        case "webflow":
+            self = .webflow(.init(
+                siteId: try c.decode(String.self, forKey: .siteId),
+                apiToken: try c.decodeIfPresent(String.self, forKey: .apiToken),
+                accessToken: try c.decodeIfPresent(String.self, forKey: .accessToken)
             ))
         default:
             throw DecodingError.dataCorruptedError(
@@ -262,6 +301,11 @@ enum AdapterConfig: Codable, Equatable {
             try c.encode(w.siteUrl, forKey: .siteUrl)
             try c.encode(w.username, forKey: .username)
             try c.encode(w.appPassword, forKey: .appPassword)
+        case .webflow(let wf):
+            try c.encode("webflow", forKey: .platform)
+            try c.encode(wf.siteId, forKey: .siteId)
+            try c.encodeIfPresent(wf.apiToken, forKey: .apiToken)
+            try c.encodeIfPresent(wf.accessToken, forKey: .accessToken)
         }
     }
 }
@@ -387,6 +431,69 @@ enum ConfigStore {
         } else {
             let taken = targets.map { $0.handle }
             let handle = TargetHandle.unique(base: host, taken: taken)
+            targets.append(TargetConfig(
+                handle: handle,
+                label: resolvedLabel,
+                syncFolderPath: "",
+                pullDrafts: config.pullDrafts,
+                pullPublished: config.pullPublished,
+                conflictStrategy: config.conflictStrategy,
+                syncMode: config.syncMode,
+                contentKinds: contentKinds,
+                adapter: adapter
+            ))
+        }
+        config.targets = targets
+        try save(config)
+    }
+
+    /// Add or update a Webflow target. `apiToken` (DIY) or `accessToken` (PRO
+    /// OAuth) carries the bearer token — at least one is required. Duplicate
+    /// detection (and the per-target folder) keys on `siteId`. Editing preserves
+    /// the prior token when the caller omits it.
+    static func upsertWebflowTarget(
+        siteId: String,
+        apiToken: String?,
+        accessToken: String?,
+        contentKinds: [String],
+        label: String? = nil,
+        editingHandle: String? = nil
+    ) throws {
+        guard var config = load(), !config.vaultPath.isEmpty else {
+            throw ConfigError.missingBaseConfig
+        }
+        let trimmedSite = siteId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedLabel = (label?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap {
+            $0.isEmpty ? nil : $0
+        } ?? "Webflow"
+
+        var targets = config.targets ?? []
+        let existingIdx = targets.firstIndex(where: {
+            if let editingHandle { return $0.handle == editingHandle }
+            if case .webflow(let wf) = $0.adapter { return wf.siteId == trimmedSite }
+            return false
+        })
+
+        // Preserve a prior token when editing and the caller omitted it.
+        var priorApiToken: String?
+        var priorAccessToken: String?
+        if let idx = existingIdx, case .webflow(let wf) = targets[idx].adapter {
+            priorApiToken = wf.apiToken
+            priorAccessToken = wf.accessToken
+        }
+        let adapter: AdapterConfig = .webflow(.init(
+            siteId: trimmedSite,
+            apiToken: apiToken ?? priorApiToken,
+            accessToken: accessToken ?? priorAccessToken
+        ))
+
+        if let idx = existingIdx {
+            targets[idx].label = resolvedLabel
+            targets[idx].adapter = adapter
+            targets[idx].contentKinds = contentKinds
+        } else {
+            let taken = targets.map { $0.handle }
+            let handle = TargetHandle.unique(base: "webflow-\(trimmedSite)", taken: taken)
             targets.append(TargetConfig(
                 handle: handle,
                 label: resolvedLabel,

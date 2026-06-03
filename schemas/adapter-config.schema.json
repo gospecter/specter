@@ -91,6 +91,54 @@
             "appPassword"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "platform": {
+              "type": "string",
+              "const": "webflow"
+            },
+            "siteId": {
+              "type": "string",
+              "description": "Webflow site ID whose CMS collections are synced."
+            },
+            "apiToken": {
+              "type": "string",
+              "description": "Site API token (Bearer) — the AGPL/DIY auth path. Paste a token from the site's API access settings."
+            },
+            "accessToken": {
+              "type": "string",
+              "description": "OAuth access token (PRO). Issued by the hosted OAuth flow (`web/src/pages/api/oauth/webflow/`). Webflow OAuth tokens are long-lived and non-expiring with no refresh token, so this is simply another bearer token — used in preference to `apiToken`. The adapter never branches on which produced the token. At least one of `apiToken` / `accessToken` must be present."
+            },
+            "fieldMap": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "type": "string"
+                  },
+                  "body": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "description": "Optional per-collection field-mapping overrides, keyed by collection id. Omitted fields fall back to auto-detection (name → title, slug → slug, first RichText field → body)."
+            }
+          },
+          "required": [
+            "platform",
+            "siteId"
+          ],
+          "additionalProperties": false
         }
       ],
       "description": "Per-platform credential block. Discriminated by `platform`. Other config (vault path, sync folder, conflict strategy, …) stays in the top-level DaemonConfig — these fields are purely the CMS connection."

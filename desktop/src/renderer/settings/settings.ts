@@ -27,6 +27,7 @@ const pullDraftsEl = $('s-pull-drafts') as HTMLInputElement;
 const pullPublishedEl = $('s-pull-published') as HTMLInputElement;
 const conflictEl = $('s-conflict-strategy') as HTMLSelectElement;
 const conflictHelp = $('s-conflict-help');
+const oauthBaseEl = $('s-oauth-base') as HTMLInputElement;
 
 const saveErrorEl = $('s-save-error');
 const cancelBtn = $('s-cancel') as HTMLButtonElement;
@@ -44,6 +45,7 @@ interface Draft {
   conflictStrategy: 'ask' | 'keep_local' | 'keep_remote';
   syncMode: 'auto' | 'manual';
   watchDebounceMs: number;
+  oauthBaseUrl?: string;
 }
 
 let draft: Draft = {
@@ -186,6 +188,11 @@ pullPublishedEl.addEventListener('change', () => {
 conflictEl.addEventListener('change', () => {
   draft.conflictStrategy = conflictEl.value as Draft['conflictStrategy'];
   updateConflictHelp();
+});
+
+oauthBaseEl.addEventListener('input', () => {
+  const v = oauthBaseEl.value.trim();
+  draft.oauthBaseUrl = v.length > 0 ? oauthBaseEl.value : undefined;
 });
 
 function updateConflictHelp(): void {
@@ -351,6 +358,7 @@ async function init(): Promise<void> {
     pullDraftsEl.checked = cfg.pullDrafts;
     pullPublishedEl.checked = cfg.pullPublished;
     conflictEl.value = cfg.conflictStrategy;
+    oauthBaseEl.value = cfg.oauthBaseUrl ?? '';
     renderFolderDisplay();
     updateSyncModeHelp();
     updateConflictHelp();

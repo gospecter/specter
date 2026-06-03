@@ -19,6 +19,7 @@ import {
   mergeTargetsForConfig,
   normalizeContentKinds,
   baseKind,
+  isContentKindAllowed,
   PLATFORM_KINDS,
   slugifyHandle,
   uniqueHandle,
@@ -263,8 +264,8 @@ export function setTargetContentKinds(
   const idx = targets.findIndex((t) => t.handle === handle);
   if (idx < 0) return { ok: false, error: `Unknown target: ${handle}` };
 
-  const supported = PLATFORM_KINDS[targets[idx].adapter.platform];
-  const filtered = contentKinds.filter((k) => supported.includes(k));
+  const platform = targets[idx].adapter.platform;
+  const filtered = contentKinds.filter((k) => isContentKindAllowed(platform, k));
   const nextTargets = targets.map((t, i) =>
     i === idx ? { ...t, contentKinds: filtered } : t,
   );
@@ -459,9 +460,8 @@ function resolveContentKinds(
   explicit: ContentKind[] | undefined,
   existing: TargetConfig | undefined,
 ): ContentKind[] {
-  const supported = PLATFORM_KINDS[platform];
   if (Array.isArray(explicit)) {
-    return explicit.filter((k) => supported.includes(k));
+    return explicit.filter((k) => isContentKindAllowed(platform, k));
   }
   if (existing) return normalizeContentKinds(existing);
   return [];
@@ -548,6 +548,66 @@ export function upsertShopifyTarget(
       accessTokenExpiresAt: tokenFields.accessTokenExpiresAt,
       refreshTokenExpiresAt: tokenFields.refreshTokenExpiresAt,
     },
+  };
+
+  if (idx >= 0) {
+    targets[idx] = target;
+  } else {
+    targets.push(target);
+  }
+  writeConfig({ ...current, targets });
+}
+
+/**
+ * Add or update a Webflow target. `creds` carries the bearer token from either
+ * auth path — a pasted Site API token (DIY) or an OAuth access token (PRO) —
+ * stored in `apiToken` / `accessToken` respectively. Duplicate detection (and
+ * the per-target folder) keys on `siteId`. Editing preserves the prior token /
+ * field-map when the caller omits them.
+ */
+export function upsertWebflowTarget(
+  siteId: string,
+  creds: { apiToken?: string; accessToken?: string },
+  label?: string,
+  contentKinds?: ContentKind[],
+): void {
+  const current = readConfig();
+  if (!current?.vaultPath) {
+    throw new Error('Set up a local sync folder before adding a Webflow site.');
+  }
+  if (!creds.apiToken && !creds.accessToken) {
+    throw new Error('A Webflow site API token or OAuth token is required.');
+  }
+
+  const targets = current.targets ? [...current.targets] : [];
+  const idx = targets.findIndex(
+    (existing) => existing.adapter.platform === 'webflow' && existing.adapter.siteId === siteId,
+  );
+
+  const handle =
+    idx >= 0
+      ? targets[idx].handle
+      : uniqueHandle(slugifyHandle(`webflow-${siteId}`), targets.map((t) => t.handle));
+
+  const adapter: AdapterConfig = {
+    platform: 'webflow',
+    siteId,
+    apiToken: creds.apiToken ?? (idx >= 0 ? targets[idx].adapter.apiToken : undefined),
+    accessToken: creds.accessToken ?? (idx >= 0 ? targets[idx].adapter.accessToken : undefined),
+    fieldMap: idx >= 0 ? targets[idx].adapter.fieldMap : undefined,
+  };
+
+  const target: TargetConfig = {
+    handle,
+    label: label?.trim() || (idx >= 0 ? targets[idx].label : 'Webflow'),
+    // Empty by default → each Webflow site syncs into its own `handle/` folder.
+    syncFolderPath: idx >= 0 ? targets[idx].syncFolderPath : '',
+    pullDrafts: current.pullDrafts,
+    pullPublished: current.pullPublished,
+    conflictStrategy: current.conflictStrategy,
+    syncMode: current.syncMode,
+    contentKinds: resolveContentKinds('webflow', contentKinds, idx >= 0 ? targets[idx] : undefined),
+    adapter,
   };
 
   if (idx >= 0) {

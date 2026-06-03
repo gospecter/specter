@@ -1,6 +1,6 @@
 {
   "name": "ghost-sync",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Cross-platform daemon for two-way sync between Ghost CMS and a local markdown folder",
   "type": "module",
   "bin": {
