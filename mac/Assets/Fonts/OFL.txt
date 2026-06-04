@@ -1,0 +1,5 @@
+Sora and Inter are licensed under the SIL Open Font License 1.1.
+Sora © The Sora Project Authors (https://github.com/soulcadet/sora-typeface)
+Inter © The Inter Project Authors (https://github.com/rsms/inter)
+Static weight instances generated from the upstream variable fonts via fonttools.
+Full license: https://openfontlicense.org

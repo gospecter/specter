@@ -156,9 +156,9 @@ struct WordPressConnectView: View {
             Form {
                 Section("Site") {
                     TextField("Label (optional)", text: $controller.label,
-                              prompt: Text("My WordPress site"))
+                              prompt: Text("e.g. My WordPress site"))
                     TextField("Site URL", text: $controller.siteUrl,
-                              prompt: Text("https://example.com"))
+                              prompt: Text("e.g. https://example.com"))
                         .onChange(of: controller.siteUrl) { _ in
                             controller.testResult = .untested
                         }
@@ -171,7 +171,7 @@ struct WordPressConnectView: View {
                             controller.testResult = .untested
                         }
                     Button {
-                        if let url = URL(string: "https://wordpress.org/documentation/article/application-passwords/") {
+                        if let url = URL(string: "https://make.wordpress.org/core/2020/11/05/application-passwords-integration-guide/") {
                             NSWorkspace.shared.open(url)
                         }
                     } label: {

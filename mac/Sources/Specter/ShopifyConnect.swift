@@ -98,7 +98,7 @@ struct ShopifyConnectView: View {
             Form {
                 Section("Store") {
                     TextField("Label (optional)", text: $controller.label,
-                              prompt: Text("My Shopify store"))
+                              prompt: Text("e.g. My Shopify store"))
                     LabeledContent("Store", value: controller.shopDisplay)
                 }
 

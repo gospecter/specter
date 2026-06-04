@@ -44,6 +44,19 @@ cp "${PROJECT_ROOT}/dist/daemon.bundle.js" "${APP}/Contents/Resources/daemon.bun
 cp "${PROJECT_ROOT}/dist/daemon.mjs" "${APP}/Contents/Resources/daemon.mjs"
 cp "${PWD}/Assets/AppIcon.icns" "${APP}/Contents/Resources/AppIcon.icns"
 
+# Bundled UI fonts (Sora + Inter, static weights). Registered with the system
+# via ATSApplicationFontsPath in Info.plist below so the DesignSystem .custom()
+# calls resolve instead of silently falling back to SF Pro. Without this the
+# app renders in the system font and looks generic vs. the design mockups.
+mkdir -p "${APP}/Contents/Resources/Fonts"
+cp "${PWD}"/Assets/Fonts/*.ttf "${APP}/Contents/Resources/Fonts/"
+
+# Bundled platform brand iconmarks (Ghost / Shopify / WordPress / Webflow),
+# monochrome PNGs loaded as template images and tinted to the UI. Rendered by
+# PlatformIconTile; falls back to an SF Symbol if a logo is missing.
+mkdir -p "${APP}/Contents/Resources/Logos"
+cp "${PWD}"/Assets/Logos/*.svg "${APP}/Contents/Resources/Logos/"
+
 # Sparkle.framework — dyld looks for it at @rpath/.../Frameworks/Sparkle.framework
 # when the app launches. Copy preserving symlinks so the Versions/B → Versions/Current
 # structure stays intact (Apple's framework spec depends on it).
@@ -83,11 +96,12 @@ cat > "${APP}/Contents/Info.plist" <<PLIST
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleName</key><string>Specter</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.10.0</string>
-  <key>CFBundleVersion</key><string>12</string>
+  <key>CFBundleShortVersionString</key><string>0.11.0</string>
+  <key>CFBundleVersion</key><string>13</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
+  <key>ATSApplicationFontsPath</key><string>Fonts</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>
@@ -105,6 +119,47 @@ cat > "${APP}/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+
+# --- Stable code signature (dev) ---------------------------------------------
+# Without a signature the bundle is ad-hoc, and an ad-hoc signature's hash
+# changes on every build. macOS TCC keys folder/Privacy grants to the app's
+# code signature, so each rebuild looks like a brand-new app and you get
+# re-prompted ("Specter wants to access your Desktop folder…") every single
+# build. Signing with a *stable* identity gives a constant designated
+# requirement, so a folder grant you give once persists across rebuilds.
+#
+# Picks an explicit SPECTER_DEV_SIGN_ID if set, else the first Apple Development
+# / Developer ID identity in your keychain (no personal cert hardcoded here, so
+# this stays safe to export to the public repo). If none is found it leaves the
+# build ad-hoc and just warns — the app still runs, you'll just keep getting
+# prompts. Release signing/notarization is separate; see mac/release.sh.
+SIGN_ID="${SPECTER_DEV_SIGN_ID:-$(security find-identity -v -p codesigning 2>/dev/null \
+  | awk -F'"' '/Apple Development|Developer ID Application/{print $2; exit}')}"
+if [ -n "${SIGN_ID}" ]; then
+  # codesign refuses to sign over `com.apple.FinderInfo` detritus, and when the
+  # project lives in an iCloud-synced tree (~/Documents…) those xattrs can't be
+  # stripped in place — iCloud re-stamps them. So sign a clean copy in /tmp
+  # (ditto --noextattr drops the xattrs) and copy the signed bundle back. The
+  # embedded code signature on the main executable — which is what macOS TCC
+  # keys folder/Privacy grants to — survives the round trip, giving a *stable*
+  # designated requirement so a folder grant persists across rebuilds instead of
+  # re-prompting every build. (Release signing/notarization is separate; see
+  # mac/release.sh.)
+  _stage="$(mktemp -d)"
+  if /usr/bin/ditto --norsrc --noextattr --noacl "${APP}" "${_stage}/Specter.app" \
+     && codesign --force --deep --sign "${SIGN_ID}" "${_stage}/Specter.app" 2>/dev/null; then
+    rm -rf "${APP}"
+    /usr/bin/ditto --norsrc --noextattr --noacl "${_stage}/Specter.app" "${APP}"
+    echo "==> Signed dev build with \"${SIGN_ID}\""
+    echo "    (grant Desktop/folder access once; it persists across rebuilds now)"
+  else
+    echo "==> WARN: codesign failed — build is ad-hoc, macOS will re-prompt for folder access on each build." >&2
+  fi
+  rm -rf "${_stage}"
+else
+  echo "==> No signing identity found — build stays ad-hoc (Desktop/Documents prompts will recur)." >&2
+  echo "    Set SPECTER_DEV_SIGN_ID, or create an Apple Development cert in Xcode. See mac/release.sh." >&2
+fi
 
 SIZE=$(du -sh "${APP}" | cut -f1)
 echo

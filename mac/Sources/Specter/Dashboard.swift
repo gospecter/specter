@@ -65,6 +65,20 @@ final class DashboardController: ObservableObject {
 
     @Published var isFreeTier: Bool = false
 
+    /// Handles with a pull/push currently in flight. Drives the per-card
+    /// spinner so a click gives immediate in-window feedback.
+    @Published var runningHandles: Set<String> = []
+
+    /// Which connect/edit form is presented as a sheet over the dashboard
+    /// window. `nil` = no sheet. Editing happens here, anchored to the main
+    /// window, instead of a free-floating secondary window.
+    @Published var activeSheet: ConnectSheet?
+
+    enum ConnectSheet: String, Identifiable {
+        case ghost, wordpress, shopify, webflow
+        var id: String { rawValue }
+    }
+
     /// Set by `SpecterApp.body` once both controllers exist so the per-card
     /// actions can talk to the daemon and refresh status without each
     /// callsite re-resolving them. Optional so unit/SwiftUI previews still
@@ -203,6 +217,10 @@ final class DashboardController: ObservableObject {
         case .dryRun: subcommand = "sync"; dryRun = true
         }
         debugLog("dispatching MenuActions.runForTarget subcommand=\(subcommand) handle=\(handle) dryRun=\(dryRun)")
+        // Mark this connection busy so its card shows a spinner immediately
+        // (in-window feedback; the system notification alone wasn't enough to
+        // tell whether the click registered).
+        runningHandles.insert(handle)
         MenuActions.runForTarget(
             subcommand,
             targetHandle: handle,
@@ -210,6 +228,7 @@ final class DashboardController: ObservableObject {
             dryRun: dryRun,
             onComplete: { [weak self] succeeded in
                 self?.debugLog("MenuActions.runForTarget completion succeeded=\(succeeded)")
+                self?.runningHandles.remove(handle)
                 // Always refresh, success or failure, so the card mirrors the
                 // post-run state (last-sync timestamp, conflict count, error
                 // status) without waiting for the StatusStore poll.
@@ -269,29 +288,49 @@ final class DashboardController: ObservableObject {
         ConfigStore.load()?.targets?.first(where: { $0.handle == handle })
     }
 
-    /// Pre-fill the matching per-platform connect form and return the window id
-    /// to open, or nil for platforms with no in-app edit form (Shopify is
-    /// re-authorized through the web OAuth flow, not a local form). Caller
-    /// (the view) performs `openWindow(id:)` because window opening needs the
-    /// SwiftUI environment.
-    func prepareEdit(handle: String) -> String? {
-        guard let target = configTarget(handle: handle) else { return nil }
+    /// Pre-fill the matching connect form and present it as a sheet over the
+    /// dashboard window (anchored, not a free-floating window). Shopify has no
+    /// local credential form — its content-kind/label edit form is still a
+    /// sheet, credentials re-auth via the web flow.
+    func presentEditSheet(handle: String) {
+        guard let target = configTarget(handle: handle) else { return }
         switch target.adapter {
         case .ghost:
             ghostConnect?.loadForEditing(target)
-            return "ghost-connect"
+            activeSheet = .ghost
         case .wordpress:
             wordpressConnect?.loadForEditing(target)
-            return "wordpress-connect"
+            activeSheet = .wordpress
         case .shopify:
-            // Credentials are re-authorized via the web flow, but content-kind
-            // selection (and the label) are editable in-app.
             shopifyConnect?.loadForEditing(target)
-            return "shopify-connect"
+            activeSheet = .shopify
         case .webflow:
             webflowConnect?.loadForEditing(target)
-            return "webflow-connect"
+            activeSheet = .webflow
         }
+    }
+
+    /// Present a connect form for adding a NEW connection of `platform` as a
+    /// sheet over the dashboard. Resets the form first so stale edit state
+    /// doesn't leak in.
+    func presentAddSheet(_ sheet: ConnectSheet) {
+        switch sheet {
+        case .ghost:     ghostConnect?.reset()
+        case .wordpress: wordpressConnect?.reset()
+        case .webflow:   webflowConnect?.reset()
+        case .shopify:   shopifyConnect?.reset()
+        }
+        activeSheet = sheet
+    }
+
+    /// Called by the sheet's Save/Cancel to tear it down and refresh.
+    func dismissSheet(didSave: Bool) {
+        activeSheet = nil
+        if didSave {
+            supervisor?.restart()
+        }
+        reload()
+        statusStore?.reload()
     }
 
     /// Remove a target from `config.targets[]` and re-save. Vault files stay on
@@ -362,7 +401,7 @@ final class DashboardController: ObservableObject {
             } else if let perTarget = state?.targets?[tc.handle] {
                 // Per-target state.json entry — always prefer this when present.
                 let lastSyncedAt = perTarget.lastSyncAt.flatMap {
-                    ISO8601DateFormatter().date(from: $0)
+                    ISO8601.parse($0)
                 }
                 lastSyncedRelative = relativeString(from: lastSyncedAt)
                 conflictCount = perTarget.lastConflicts ?? 0
@@ -371,7 +410,7 @@ final class DashboardController: ObservableObject {
                 // Fallback: single-target config or first run before per-target
                 // state has been written. Reuse the global counters as before.
                 let lastSyncedAt = state?.lastSyncAt.flatMap {
-                    ISO8601DateFormatter().date(from: $0)
+                    ISO8601.parse($0)
                 }
                 lastSyncedRelative = relativeString(from: lastSyncedAt)
                 conflictCount = state?.lastConflicts ?? 0
@@ -481,6 +520,9 @@ final class DashboardController: ObservableObject {
         guard let date = date else { return nil }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
+        // The UI is English-only; without pinning the locale this picks up the
+        // system language and prints e.g. Swedish "för 57 s sen" mid-UI.
+        formatter.locale = Locale(identifier: "en_US")
         return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
@@ -489,6 +531,10 @@ struct DashboardView: View {
     @ObservedObject var controller: DashboardController
     @ObservedObject var preview: PreviewController
     @ObservedObject var license: LicenseController
+    @ObservedObject var ghostConnect: GhostConnectController
+    @ObservedObject var wordpressConnect: WordPressConnectController
+    @ObservedObject var shopifyConnect: ShopifyConnectController
+    @ObservedObject var webflowConnect: WebflowConnectController
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
@@ -507,8 +553,54 @@ struct DashboardView: View {
         .frame(minWidth: 960, minHeight: 640)
         .background(DS.Surface.base)
         .preferredColorScheme(.dark)
-        .onAppear { controller.start(); license.refresh() }
+        .onAppear { controller.start(); license.refresh(); configureWindowChrome() }
         .onDisappear { controller.stop() }
+        // Edit/add connection forms present here, anchored to this window.
+        .sheet(item: $controller.activeSheet) { sheet in
+            connectSheet(sheet)
+                // Force exit through the form's Save/Cancel (both reset the
+                // connect controller) so an Esc dismiss can't strand stale
+                // form state for the next open.
+                .interactiveDismissDisabled(true)
+        }
+    }
+
+    @ViewBuilder
+    private func connectSheet(_ sheet: DashboardController.ConnectSheet) -> some View {
+        switch sheet {
+        case .ghost:
+            GhostConnectView(controller: ghostConnect,
+                             onSave: { ghostConnect.reset(); controller.dismissSheet(didSave: true) },
+                             onCancel: { ghostConnect.reset(); controller.dismissSheet(didSave: false) })
+        case .wordpress:
+            WordPressConnectView(controller: wordpressConnect,
+                                 onSave: { wordpressConnect.reset(); controller.dismissSheet(didSave: true) },
+                                 onCancel: { wordpressConnect.reset(); controller.dismissSheet(didSave: false) })
+        case .shopify:
+            ShopifyConnectView(controller: shopifyConnect,
+                               onSave: { shopifyConnect.reset(); controller.dismissSheet(didSave: true) },
+                               onCancel: { shopifyConnect.reset(); controller.dismissSheet(didSave: false) })
+        case .webflow:
+            WebflowConnectView(controller: webflowConnect,
+                               onSave: { webflowConnect.reset(); controller.dismissSheet(didSave: true) },
+                               onCancel: { webflowConnect.reset(); controller.dismissSheet(didSave: false) })
+        }
+    }
+
+    /// Native window chrome: extend the sidebar + content under a transparent
+    /// titlebar and make the window non-opaque so the sidebar's `.behindWindow`
+    /// vibrancy actually blurs the desktop. Traffic-light buttons are kept (we
+    /// only hide the title + bar fill, not the buttons). Runs once when the
+    /// dashboard window appears.
+    private func configureWindowChrome() {
+        guard let window = NSApplication.shared.windows.first(where: { $0.title == "Specter" })
+        else { return }
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.styleMask.insert(.fullSizeContentView)
+        window.isMovableByWindowBackground = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
     }
 }
 
@@ -525,11 +617,13 @@ private struct SidebarNav: View {
                 Image(systemName: "circle.hexagongrid.fill")
                     .foregroundStyle(DS.Accent.onDark)
                 Text("Specter")
-                    .font(DS.Typography.headlineSm())
+                    .font(DS.Typography.wordmark())
                     .foregroundStyle(DS.Text.primary)
             }
             .padding(.horizontal, 20)
-            .padding(.top, 20)
+            // Clear the traffic-light buttons — the titlebar is transparent and
+            // content runs full-height under it (see configureWindowChrome).
+            .padding(.top, 44)
             .padding(.bottom, 24)
 
             // Section nav
@@ -563,7 +657,8 @@ private struct SidebarNav: View {
         }
         .frame(width: DS.Space.sidebarW)
         .frame(maxHeight: .infinity)
-        .background(DS.Surface.panel)
+        // Native translucent sidebar (blurs the desktop behind the window).
+        .background(VibrancySidebar())
         .overlay(
             Rectangle()
                 .fill(DS.Surface.borderSubtle)
@@ -623,15 +718,53 @@ private struct DashboardMain: View {
     var onPreviewTarget: (String) -> Void
 
     var body: some View {
-        Group {
-            switch controller.section {
-            case .targets:   TargetsPane(controller: controller, onPreviewTarget: onPreviewTarget)
-            case .activity:  ActivityPane(controller: controller)
-            case .conflicts: ConflictsPane(controller: controller)
-            case .settings:  SettingsPane(controller: controller, license: license)
+        VStack(spacing: 0) {
+            TopAppBar(title: controller.section.label)
+            Group {
+                switch controller.section {
+                case .targets:   TargetsPane(controller: controller, onPreviewTarget: onPreviewTarget)
+                case .activity:  ActivityPane(controller: controller)
+                case .conflicts: ConflictsPane(controller: controller)
+                case .settings:  SettingsPane(controller: controller, license: license)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+/// Slim top chrome bar (mockup `TopAppBar`): contextual section title on the
+/// left, utility glyphs + account avatar on the right. Purely chrome — the
+/// per-pane search/filters live inside each pane.
+private struct TopAppBar: View {
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 16) {
+            Text(title)
+                .font(DS.Typography.headlineSm())
+                .foregroundStyle(DS.Text.primary)
+            Spacer()
+            Image(systemName: "bell")
+                .font(.system(size: 14))
+                .foregroundStyle(DS.Text.muted)
+            Image(systemName: "checkmark.icloud")
+                .font(.system(size: 14))
+                .foregroundStyle(DS.Text.muted)
+            Circle()
+                .fill(DS.Surface.elevated)
+                .frame(width: 26, height: 26)
+                .overlay(
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(DS.Text.muted)
+                )
+                .overlay(Circle().strokeBorder(DS.Surface.borderSubtle, lineWidth: 1))
+        }
+        .padding(.horizontal, DS.Space.section)
+        .frame(height: 56)
+        .background(DS.Surface.base)
+        .overlay(Rectangle().fill(DS.Surface.borderSubtle).frame(height: 1), alignment: .bottom)
     }
 }
 
@@ -640,55 +773,47 @@ private struct TargetsPane: View {
     var onPreviewTarget: (String) -> Void
     @Environment(\.openWindow) private var openWindow
 
-    /// Persisted grid/list preference (mockup's view toggle).
-    @AppStorage("connectionsLayout") private var layout: String = "grid"
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.section) {
-                // Top bar
-                HStack(spacing: 12) {
-                    Text("Connections")
-                        .font(DS.Typography.headlineMd())
-                        .foregroundStyle(DS.Text.primary)
-                    Spacer()
-                    Picker("", selection: $layout) {
-                        Image(systemName: "square.grid.2x2").tag("grid")
-                        Image(systemName: "list.bullet").tag("list")
+                // Page header — title + subtitle (left), controls (right).
+                HStack(alignment: .bottom, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Connections")
+                            .font(DS.Typography.headlineXl())
+                            .foregroundStyle(DS.Text.primary)
+                        Text("Manage your synced platforms and monitor publishing status across your ecosystem.")
+                            .font(DS.Typography.bodyLg())
+                            .foregroundStyle(DS.Text.muted)
+                            .frame(maxWidth: 440, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .fixedSize()
+                    Spacer()
                     Menu("+ Add connection") {
                         Button("Ghost…") {
                             // First run (no config yet) still goes through
                             // onboarding so the user picks a vault folder; once
                             // a base config exists, add Nth Ghost blogs via the
-                            // dedicated connect form (which appends a new target
-                            // rather than overwriting the single-Ghost slot).
-                            controller.ghostConnect?.reset()
-                            NSApplication.shared.setActivationPolicy(.regular)
-                            NSApplication.shared.activate(ignoringOtherApps: true)
-                            openWindow(id: ConfigStore.exists ? "ghost-connect" : "onboarding")
+                            // connect sheet (which appends a new target rather
+                            // than overwriting the single-Ghost slot).
+                            if ConfigStore.exists {
+                                controller.presentAddSheet(.ghost)
+                            } else {
+                                NSApplication.shared.setActivationPolicy(.regular)
+                                NSApplication.shared.activate(ignoringOtherApps: true)
+                                openWindow(id: "onboarding")
+                            }
                         }
                         Button("Shopify…") {
                             if let url = URL(string: "https://spectersync.com/connect-shopify") {
-                                NSWorkspace.shared.open(url)
+                                OAuthController.shared.startInApp(url)
                             }
                         }
-                        Button("WordPress…") {
-                            NSApplication.shared.setActivationPolicy(.regular)
-                            NSApplication.shared.activate(ignoringOtherApps: true)
-                            openWindow(id: "wordpress-connect")
-                        }
-                        Button("Webflow…") {
-                            controller.webflowConnect?.reset()
-                            NSApplication.shared.setActivationPolicy(.regular)
-                            NSApplication.shared.activate(ignoringOtherApps: true)
-                            openWindow(id: "webflow-connect")
-                        }
+                        Button("WordPress…") { controller.presentAddSheet(.wordpress) }
+                        Button("Webflow…") { controller.presentAddSheet(.webflow) }
                     }
                     .menuStyle(.borderlessButton)
+                    .font(DS.Typography.labelMd())
                     .fixedSize()
                 }
 
@@ -698,10 +823,14 @@ private struct TargetsPane: View {
 
                 if controller.targets.isEmpty {
                     EmptyTargetsState()
-                } else if layout == "list" {
-                    VStack(spacing: DS.Space.unit * 2) {
-                        ForEach($controller.targets) { $target in
+                } else {
+                    // Single labeled-table layout (grid view was dropped) —
+                    // column headers line up with each row, matching Sync Logs.
+                    VStack(spacing: 0) {
+                        ConnectionsTableHeader()
+                        ForEach(Array($controller.targets.enumerated()), id: \.element.id) { index, $target in
                             SyncCardRow(target: $target,
+                                        isRunning: controller.runningHandles.contains($target.wrappedValue.id),
                                         onPull: pull($target.wrappedValue.id),
                                         onPush: push($target.wrappedValue.id),
                                         onDryRun: { onPreviewTarget($target.wrappedValue.id) },
@@ -710,26 +839,12 @@ private struct TargetsPane: View {
                                         onRemove: { controller.removeTarget(handle: $target.wrappedValue.id) },
                                         onResolveConflict: {},
                                         onAutoSyncChange: auto($target.wrappedValue.id))
+                            if index < controller.targets.count - 1 {
+                                Rectangle().fill(DS.Surface.borderSubtle).frame(height: 1)
+                            }
                         }
                     }
-                } else {
-                    LazyVGrid(
-                        columns: [GridItem(.flexible(), spacing: DS.Space.gutter),
-                                  GridItem(.flexible(), spacing: DS.Space.gutter)],
-                        spacing: DS.Space.gutter
-                    ) {
-                        ForEach($controller.targets) { $target in
-                            SyncCard(target: $target,
-                                     onPull: pull($target.wrappedValue.id),
-                                     onPush: push($target.wrappedValue.id),
-                                     onDryRun: { onPreviewTarget($target.wrappedValue.id) },
-                                     onEdit: edit($target.wrappedValue.id),
-                                     onTest: { controller.testTarget(handle: $target.wrappedValue.id) },
-                                     onRemove: { controller.removeTarget(handle: $target.wrappedValue.id) },
-                                     onResolveConflict: {},
-                                     onAutoSyncChange: auto($target.wrappedValue.id))
-                        }
-                    }
+                    .dsCard(padding: 0)
                 }
             }
             .padding(DS.Space.section)
@@ -746,13 +861,7 @@ private struct TargetsPane: View {
         { enabled in controller.setAutoSync(handle: id, enabled: enabled) }
     }
     private func edit(_ id: String) -> () -> Void {
-        {
-            if let windowId = controller.prepareEdit(handle: id) {
-                NSApplication.shared.setActivationPolicy(.regular)
-                NSApplication.shared.activate(ignoringOtherApps: true)
-                openWindow(id: windowId)
-            }
-        }
+        { controller.presentEditSheet(handle: id) }
     }
 }
 
@@ -808,7 +917,7 @@ private struct ActivityPane: View {
             VStack(alignment: .leading, spacing: DS.Space.section) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("Sync Logs")
-                        .font(DS.Typography.headlineMd())
+                        .font(DS.Typography.headlineXl())
                         .foregroundStyle(DS.Text.primary)
                     Spacer()
                     if !controller.targets.isEmpty {
@@ -931,26 +1040,70 @@ private struct SyncLogRow: View {
         .padding(.vertical, DS.Space.gutter)
     }
 
-    private var statusText: String { (state?.lastSyncStatus ?? "never").uppercased() }
+    // Same vocabulary as the Connections cards' health pill, so the two
+    // screens agree: "SYNCED" here == "SYNCED" there.
+    private var statusText: String {
+        switch state?.lastSyncStatus {
+        case "ok":      return "SYNCED"
+        case "error":   return "ERROR"
+        case "partial": return "PARTIAL"
+        case "conflict": return "CONFLICT"
+        default:        return "NEVER SYNCED"
+        }
+    }
     private var statusTone: DSPill.Tone {
         switch state?.lastSyncStatus {
         case "ok":              return .success
         case "error":           return .error
         case "partial":         return .warning
+        case "conflict":        return .warning
         default:                return .neutral
         }
     }
 
     static func description(for state: TargetSyncState?) -> String {
         guard let s = state else { return "No sync has run yet." }
-        if let err = s.lastError, !err.isEmpty { return err }
+        if let err = s.lastError, !err.isEmpty { return humanizeSyncError(err) }
         var parts = ["Pulled \(s.lastPullCount ?? 0)", "pushed \(s.lastPushCount ?? 0)"]
         if (s.lastConflicts ?? 0) > 0 { parts.append("\(s.lastConflicts!) conflict(s)") }
         return parts.joined(separator: ", ") + "."
     }
 
+    /// Translate raw daemon/Node errors into plain language. Engine errors
+    /// otherwise surface here verbatim — errno codes and absolute filesystem
+    /// paths like `EPERM: operation not permitted, scandir '/Users/...'` — which
+    /// reads as broken and leaks paths. Map the common cases to actionable copy;
+    /// for anything unrecognized, strip the daemon's `[handle] verb:` prefix but
+    /// keep the rest so no detail is lost.
+    static func humanizeSyncError(_ raw: String) -> String {
+        let lower = raw.lowercased()
+        func hasAny(_ needles: [String]) -> Bool { needles.contains { lower.contains($0) } }
+
+        if hasAny(["eperm", "eacces", "operation not permitted", "permission denied"]) {
+            return "Specter can’t access your local sync folder. Grant it access in System Settings → Privacy & Security → Files and Folders, or re-pick the folder in Settings."
+        }
+        if hasAny(["enoent", "no such file"]) {
+            return "Your local sync folder is missing or was moved. Re-pick it in Settings."
+        }
+        if hasAny(["enotfound", "econnrefused", "etimedout", "getaddrinfo", "socket hang up", "network"]) {
+            return "Couldn’t reach the site. Check the connection’s URL and your internet."
+        }
+        if hasAny(["401", "403", "unauthorized", "forbidden", "authentication failed", "invalid api key", "invalid token"]) {
+            return "Authentication failed. Re-check this connection’s credentials."
+        }
+        // Unknown error: drop the leading "[handle] verb: " the daemon prepends.
+        if raw.hasPrefix("["), let close = raw.firstIndex(of: "]") {
+            let rest = raw[raw.index(after: close)...]
+                .drop(while: { $0 == " " })
+                .replacingOccurrences(of: #"^(pull|push|sync)\s*:\s*"#,
+                                      with: "", options: .regularExpression)
+            return rest.isEmpty ? raw : rest
+        }
+        return raw
+    }
+
     static func timestamp(_ iso: String?) -> String {
-        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return "—" }
+        guard let iso, let date = ISO8601.parse(iso) else { return "—" }
         let f = DateFormatter()
         f.dateFormat = "MMM d, yyyy — HH:mm:ss"
         return f.string(from: date)
@@ -967,7 +1120,7 @@ private struct ConflictsPane: View {
     var body: some View {
         VStack(alignment: .leading, spacing: DS.Space.section) {
             Text("Conflicts")
-                .font(DS.Typography.headlineMd())
+                .font(DS.Typography.headlineXl())
                 .foregroundStyle(DS.Text.primary)
 
             if conflicts.isEmpty {
@@ -1004,16 +1157,15 @@ private struct ConflictsPane: View {
     }
 }
 
-/// Settings pane — the single home for preferences (folded in from the retired
-/// standalone Settings window). Holds GLOBAL app prefs only: vault folder,
-/// launch-at-login, license, and the OAuth broker override. Per-connection
+/// Settings pane — the single home for GLOBAL app preferences only: vault
+/// folder, launch-at-login, license, and the OAuth broker override. It is
+/// deliberately connection-agnostic — adding, editing, testing, and
+/// disconnecting connections all happen on the Connections tab. Per-connection
 /// settings (sync mode, conflict strategy, content kinds) live on each
-/// connection, not here. Below the prefs: the connections list (Edit / Test /
-/// Disconnect), reusing the same controller methods the cards call.
+/// connection there, never here.
 private struct SettingsPane: View {
     @ObservedObject var controller: DashboardController
     @ObservedObject var license: LicenseController
-    @Environment(\.openWindow) private var openWindow
 
     @State private var oauthDraft: String = ""
     @State private var keyInput: String = ""
@@ -1022,13 +1174,12 @@ private struct SettingsPane: View {
         ScrollView {
             VStack(alignment: .leading, spacing: DS.Space.section) {
                 Text("Settings")
-                    .font(DS.Typography.headlineMd())
+                    .font(DS.Typography.headlineXl())
                     .foregroundStyle(DS.Text.primary)
 
                 generalSection
                 licenseSection
                 advancedSection
-                connectionsSection
             }
             .padding(DS.Space.section)
             .frame(maxWidth: DS.Space.containerMax, alignment: .topLeading)
@@ -1161,87 +1312,11 @@ private struct SettingsPane: View {
         .dsCard(padding: DS.Space.gutter)
     }
 
-    // MARK: Connections
-
-    private var connectionsSection: some View {
-        VStack(alignment: .leading, spacing: DS.Space.gutter) {
-            sectionHeader("Connections", "Every CMS Specter syncs. Each lives in its own vault folder.")
-            if controller.targets.isEmpty {
-                Text("No connections yet. Add one from the Connections tab.")
-                    .font(DS.Typography.bodyMd())
-                    .foregroundStyle(DS.Text.muted)
-            } else {
-                VStack(spacing: DS.Space.unit * 1.5) {
-                    ForEach(controller.targets) { target in
-                        TargetSettingsRow(
-                            target: target,
-                            onEdit: {
-                                if let windowId = controller.prepareEdit(handle: target.id) {
-                                    NSApplication.shared.setActivationPolicy(.regular)
-                                    NSApplication.shared.activate(ignoringOtherApps: true)
-                                    openWindow(id: windowId)
-                                }
-                            },
-                            onTest:   { controller.testTarget(handle: target.id) },
-                            onRemove: { controller.removeTarget(handle: target.id) }
-                        )
-                    }
-                }
-            }
-        }
-        .dsCard(padding: DS.Space.gutter)
-    }
-
     private func sectionHeader(_ title: String, _ subtitle: String) -> some View {
         VStack(alignment: .leading, spacing: DS.Space.unit) {
             Text(title).font(DS.Typography.headlineSm()).foregroundStyle(DS.Text.primary)
             Text(subtitle).font(DS.Typography.bodySm()).foregroundStyle(DS.Text.muted)
         }
-    }
-}
-
-private struct TargetSettingsRow: View {
-    let target: SyncTarget
-    var onEdit: () -> Void
-    var onTest: () -> Void
-    var onRemove: () -> Void
-
-    var body: some View {
-        HStack(alignment: .top, spacing: DS.Space.gutter) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(displayLabel)
-                        .font(DS.Typography.headlineSm())
-                        .foregroundStyle(DS.Text.primary)
-                    DSPill(text: target.platform.displayName, tone: .neutral)
-                }
-                Text(target.id)
-                    .font(DS.Typography.bodySm())
-                    .foregroundStyle(DS.Text.muted)
-                    .textSelection(.enabled)
-                Text(target.siteUrl)
-                    .font(DS.Typography.bodySm())
-                    .foregroundStyle(DS.Text.outline)
-                Text(target.summary)
-                    .font(DS.Typography.bodySm())
-                    .foregroundStyle(DS.Text.outline)
-                Text(ContentKinds.summary(target.contentKinds))
-                    .font(DS.Typography.bodySm())
-                    .foregroundStyle(target.contentKinds.isEmpty ? DS.Status.warning : DS.Text.outline)
-            }
-            Spacer()
-            HStack(spacing: 8) {
-                Button("Edit", action: onEdit).buttonStyle(DSGhostButtonStyle())
-                Button("Test", action: onTest).buttonStyle(DSGhostButtonStyle())
-                Button("Disconnect", action: onRemove)
-                    .buttonStyle(DSGhostButtonStyle(tone: DS.Status.error))
-            }
-        }
-        .dsCard(padding: DS.Space.gutter)
-    }
-
-    private var displayLabel: String {
-        target.label.isEmpty ? target.platform.displayName : target.label
     }
 }
 
@@ -1264,7 +1339,11 @@ private struct PlaceholderPane: View {
 
 #if DEBUG
 #Preview {
-    DashboardView(controller: DashboardController(), preview: PreviewController(), license: LicenseController())
+    DashboardView(controller: DashboardController(), preview: PreviewController(), license: LicenseController(),
+                  ghostConnect: GhostConnectController(),
+                  wordpressConnect: WordPressConnectController(),
+                  shopifyConnect: ShopifyConnectController(),
+                  webflowConnect: WebflowConnectController())
         .frame(width: 1100, height: 720)
 }
 #endif

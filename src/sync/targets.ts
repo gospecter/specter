@@ -30,6 +30,20 @@ export function effectiveRoot(target: TargetConfig): string {
 }
 
 /**
+ * Handles the `watch` daemon may reconcile automatically (initial + periodic).
+ * ONLY `auto` targets qualify — `manual` targets are never pulled or pushed
+ * without an explicit user action. This is the single source of truth for that
+ * rule so it stays testable: a manual target must never appear here, or the
+ * "Manual" control silently does nothing (a shipped regression we caught only
+ * by inspection).
+ */
+export function autoReconcileHandles(
+  targets: ReadonlyArray<Pick<TargetConfig, 'handle' | 'syncMode'>>,
+): string[] {
+  return targets.filter((t) => t.syncMode === 'auto').map((t) => t.handle);
+}
+
+/**
  * Where a target's files lived under the pre-v0.6 layout, given whether the
  * config was multi-target at the time. Single-target configs stored files at
  * the bare `syncFolderPath` (often the vault root); multi-target configs were

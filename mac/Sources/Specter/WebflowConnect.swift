@@ -157,12 +157,12 @@ struct WebflowConnectView: View {
                     Section {
                         Button {
                             if let url = OAuthController.endpointURL("/api/oauth/webflow/start") {
-                                NSWorkspace.shared.open(url)
+                                OAuthController.shared.startInApp(url)
                             }
                         } label: {
                             Label("Connect with Webflow", systemImage: "link")
                         }
-                        Text("Authorize in your browser — Specter fills in the token and site for you. Or paste a Site API token below instead.")
+                        Text("Authorize Webflow in a secure window — Specter fills in the token and site for you. Or paste a Site API token below instead.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } header: {
@@ -172,7 +172,7 @@ struct WebflowConnectView: View {
 
                 Section("Site") {
                     TextField("Label (optional)", text: $controller.label,
-                              prompt: Text("My Webflow site"))
+                              prompt: Text("e.g. My Webflow site"))
                     TextField("Site ID", text: $controller.siteId,
                               prompt: Text("Webflow site ID"))
                         .onChange(of: controller.siteId) { _ in

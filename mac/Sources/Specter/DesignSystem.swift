@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Specter Design System — Stitch tokens (1:1).
@@ -47,34 +48,34 @@ enum DS {
     }
 
     // MARK: Typography
-    /// We register Hanken Grotesk + JetBrains Mono in Info.plist when the
-    /// fonts are bundled with the app. Until then, the .custom() initializers
-    /// fall back to the system font gracefully.
+    /// Sora (headings) + Inter (body/labels) — the typefaces the design mockups
+    /// render. Static weights are bundled in `mac/Assets/Fonts/` and registered
+    /// at launch via `ATSApplicationFontsPath` (see build-app.sh). We reference
+    /// each weight by its exact PostScript name (e.g. "Sora-SemiBold") rather
+    /// than `.custom(...).weight(...)`, because synthetic weight selection on a
+    /// custom family is unreliable — naming the face is deterministic. If a face
+    /// fails to load, .custom() falls back to SF gracefully.
+    /// Two roles, kept deliberately narrow so a page doesn't read as a font
+    /// salad: **Sora** is the *display* face — page titles and the wordmark
+    /// only — and **Inter** does ALL functional UI text at just two weights
+    /// (Regular + SemiBold). Previously Sora-Medium leaked into table rows and
+    /// section heads while Inter ran Regular/SemiBold/Bold, so a single screen
+    /// showed ~5 distinct faces. Headings stay Sora; everything operational is
+    /// Inter.
     enum Typography {
-        static func headlineLg() -> Font {
-            .custom("Hanken Grotesk", size: 32).weight(.semibold)
-        }
-        static func headlineMd() -> Font {
-            .custom("Hanken Grotesk", size: 24).weight(.semibold)
-        }
-        static func headlineSm() -> Font {
-            .custom("Hanken Grotesk", size: 18).weight(.medium)
-        }
-        static func bodyLg() -> Font {
-            .custom("Hanken Grotesk", size: 16)
-        }
-        static func bodyMd() -> Font {
-            .custom("Hanken Grotesk", size: 14)
-        }
-        static func bodySm() -> Font {
-            .custom("Hanken Grotesk", size: 12)
-        }
-        static func labelMd() -> Font {
-            .custom("JetBrains Mono", size: 13).weight(.medium)
-        }
-        static func labelSm() -> Font {
-            .custom("JetBrains Mono", size: 11).weight(.medium)
-        }
+        // Display → Sora SemiBold (hero headings + wordmark only)
+        static func displayLg() -> Font  { .custom("Sora-ExtraBold", size: 56) }
+        static func headlineXl() -> Font { .custom("Sora-SemiBold", size: 40) }  // page title
+        static func headlineLg() -> Font { .custom("Sora-SemiBold", size: 30) }
+        static func headlineMd() -> Font { .custom("Sora-SemiBold", size: 22) }  // large section hero
+        static func wordmark()   -> Font { .custom("Sora-SemiBold", size: 17) }  // sidebar "Specter"
+        // UI text → Inter (Regular for prose, SemiBold for emphasis/labels)
+        static func headlineSm() -> Font { .custom("Inter-SemiBold", size: 15) }  // row/section titles
+        static func bodyLg() -> Font  { .custom("Inter-Regular", size: 16) }
+        static func bodyMd() -> Font  { .custom("Inter-Regular", size: 14) }
+        static func bodySm() -> Font  { .custom("Inter-Regular", size: 12) }
+        static func labelMd() -> Font { .custom("Inter-SemiBold", size: 12) }  // buttons, mode, nav
+        static func labelSm() -> Font { .custom("Inter-SemiBold", size: 11) }  // uppercase pills + table headers
     }
 
     // MARK: Geometry
@@ -106,6 +107,50 @@ extension Color {
     }
 }
 
+// MARK: - Date parsing
+
+/// Parse the ISO-8601 timestamps the daemon writes to state.json. Those carry
+/// fractional seconds (e.g. `2026-06-04T09:49:09.079Z`), which a default
+/// `ISO8601DateFormatter` REJECTS — so every parse silently returned nil,
+/// making synced connections read "NEVER SYNCED" and Sync Logs timestamps show
+/// "—". Try fractional first, then fall back to plain for any non-fractional
+/// strings. Formatters are reused (allocating one per call is measurably slow).
+enum ISO8601 {
+    private static let fractional: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static let plain: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+    static func parse(_ s: String) -> Date? {
+        fractional.date(from: s) ?? plain.date(from: s)
+    }
+}
+
+// MARK: - Native vibrancy
+
+/// Translucent sidebar background using the system `.sidebar` material, the
+/// same vibrancy native macOS sidebars use (Finder, Mail, Notes). `.behindWindow`
+/// blends the desktop through, giving the LookAway / Superwhisper feel.
+///
+/// Requires the host window to be non-opaque with a clear background color
+/// (`isOpaque = false`, `backgroundColor = .clear`) — otherwise the effect
+/// renders as a flat color. That's configured once in `DashboardView.onAppear`.
+struct VibrancySidebar: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .sidebar
+        view.blendingMode = .behindWindow
+        view.state = .active            // stay vibrant even when unfocused
+        return view
+    }
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+
 // MARK: - View helpers
 
 /// Standard elevated card surface: panel background + 1px ghost border + lg radius.
@@ -130,30 +175,57 @@ extension View {
 }
 
 /// Ghost button: transparent fill + 1px border. Pass `dashed: true` for dry-run.
+///
+/// Hover-reactive: the label gains a soft fill and a brighter border on hover,
+/// and a stronger fill on press, so it reads as a clickable control (the
+/// previous flat style gave no affordance — "is this even a button?"). A
+/// `ButtonStyle` can't observe hover directly, so the body is a small inner
+/// view that owns its own `@State`.
 struct DSGhostButtonStyle: ButtonStyle {
     var dashed: Bool = false
     var tone: Color = DS.Text.primary
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(DS.Typography.labelMd())
-            .foregroundStyle(tone)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: DS.Radius.base)
-                    .fill(configuration.isPressed ? DS.Surface.pressed : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: DS.Radius.base)
-                    .strokeBorder(
-                        DS.Surface.borderSubtle,
-                        style: StrokeStyle(
-                            lineWidth: 1,
-                            dash: dashed ? [4, 3] : []
+        GhostButtonBody(configuration: configuration, dashed: dashed, tone: tone)
+    }
+
+    private struct GhostButtonBody: View {
+        let configuration: Configuration
+        let dashed: Bool
+        let tone: Color
+        @State private var isHovered = false
+
+        var body: some View {
+            configuration.label
+                .font(DS.Typography.labelMd())
+                .foregroundStyle(tone.opacity(configuration.isPressed ? 0.7 : 1))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: DS.Radius.base)
+                        .fill(fill)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: DS.Radius.base)
+                        .strokeBorder(
+                            isHovered ? DS.Surface.borderStrong : DS.Surface.borderSubtle,
+                            style: StrokeStyle(lineWidth: 1, dash: dashed ? [4, 3] : [])
                         )
-                    )
-            )
+                )
+                .contentShape(RoundedRectangle(cornerRadius: DS.Radius.base))
+                .onHover { hovering in
+                    isHovered = hovering
+                    if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                }
+                .animation(.easeOut(duration: 0.12), value: isHovered)
+                .animation(.easeOut(duration: 0.10), value: configuration.isPressed)
+        }
+
+        private var fill: Color {
+            if configuration.isPressed { return DS.Surface.pressed }
+            if isHovered { return DS.Surface.hover }
+            return .clear
+        }
     }
 }
 
@@ -258,16 +330,29 @@ struct DSPill: View {
     var tone: Tone = .neutral
     /// Leading status dot (mockup status pills). Off by default.
     var dot: Bool = false
+    /// Animate the dot with a soft pulse (mockup "ACTIVE SYNCING" / live states).
+    var pulse: Bool = false
 
     enum Tone { case neutral, success, warning, error, accent }
+
+    @State private var pulsing = false
 
     var body: some View {
         HStack(spacing: 5) {
             if dot {
-                Circle().fill(fg).frame(width: 5, height: 5)
+                Circle()
+                    .fill(fg)
+                    .frame(width: 5, height: 5)
+                    .scaleEffect(pulse && pulsing ? 1.35 : 1.0)
+                    .opacity(pulse && pulsing ? 0.45 : 1.0)
+                    .animation(pulse ? .easeInOut(duration: 1.0).repeatForever(autoreverses: true) : .default,
+                               value: pulsing)
+                    .onAppear { if pulse { pulsing = true } }
             }
             Text(text)
                 .font(DS.Typography.labelSm())
+                .tracking(0.8)
+                .textCase(.uppercase)
                 .foregroundStyle(fg)
         }
         .padding(.horizontal, 8)

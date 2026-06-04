@@ -1,4 +1,5 @@
 import AppKit
+import AuthenticationServices
 import Foundation
 
 @MainActor
@@ -6,6 +7,10 @@ final class OAuthController: NSObject {
     static let shared = OAuthController()
 
     var lastMessage: String?
+
+    /// Held for the lifetime of an in-app auth flow — ASWebAuthenticationSession
+    /// is deallocated (and the sheet closes) if nothing retains it.
+    private var authSession: ASWebAuthenticationSession?
 
     /// OAuth broker shipped with PRO. DIY users who self-host a broker override
     /// it via the `oauthBaseUrl` config field (see `DaemonConfig.oauthBaseUrl`).
@@ -25,6 +30,37 @@ final class OAuthController: NSObject {
     /// Build a URL on the configured broker, e.g. `/api/oauth/webflow/start`.
     static func endpointURL(_ path: String) -> URL? {
         URL(string: baseURLString + path)
+    }
+
+    /// Run an OAuth handshake **inside the app** with a native secure web sheet
+    /// (ASWebAuthenticationSession) instead of bouncing to the default browser.
+    /// The broker's final redirect to `specter://oauth/complete?…` is captured by
+    /// the session via the matching callback scheme, so we feed it straight into
+    /// the same `handle(_:)` path the browser flow used — no behavior change
+    /// downstream, just no trip to Safari.
+    func startInApp(_ startURL: URL) {
+        let session = ASWebAuthenticationSession(
+            url: startURL,
+            callbackURLScheme: "specter"
+        ) { [weak self] callbackURL, error in
+            guard let self else { return }
+            self.authSession = nil
+            if let callbackURL {
+                self.handle(callbackURL)
+            } else if let error {
+                // Closing the sheet is a normal cancel, not a failure to report.
+                if (error as? ASWebAuthenticationSessionError)?.code == .canceledLogin { return }
+                self.show("Connection failed", error.localizedDescription)
+            }
+        }
+        session.presentationContextProvider = self
+        // Reuse any existing Shopify/Webflow login so the user isn't forced to
+        // sign in from scratch every time.
+        session.prefersEphemeralWebBrowserSession = false
+        authSession = session
+        if !session.start() {
+            show("Connection failed", "Couldn’t open the secure sign-in window.")
+        }
     }
 
     func register() {
@@ -163,6 +199,14 @@ final class OAuthController: NSObject {
         alert.alertStyle = title.contains("failed") ? .warning : .informational
         alert.addButton(withTitle: "OK")
         alert.runModal()
+    }
+}
+
+extension OAuthController: ASWebAuthenticationPresentationContextProviding {
+    nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        MainActor.assumeIsolated {
+            NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible }) ?? NSApp.windows.first ?? NSWindow()
+        }
     }
 }
 

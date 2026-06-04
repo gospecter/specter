@@ -138,14 +138,14 @@ struct GhostConnectView: View {
             Form {
                 Section("Blog") {
                     TextField("Label (optional)", text: $controller.label,
-                              prompt: Text("My Ghost blog"))
+                              prompt: Text("e.g. My Ghost blog"))
                     TextField("Ghost URL", text: $controller.ghostUrl,
-                              prompt: Text("https://yourblog.ghost.io"))
+                              prompt: Text("e.g. https://yourblog.ghost.io"))
                         .onChange(of: controller.ghostUrl) { _ in
                             controller.testResult = .untested
                         }
                     SecureField("Admin API Key", text: $controller.adminApiKey,
-                                prompt: Text("id:secret"))
+                                prompt: Text("e.g. id:secret"))
                         .onChange(of: controller.adminApiKey) { _ in
                             controller.testResult = .untested
                         }

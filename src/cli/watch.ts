@@ -2,7 +2,12 @@ import path from 'node:path';
 import chokidar from 'chokidar';
 import { createAdapter } from '../cms/index.js';
 import { SyncEngine } from '../sync/engine.js';
-import { effectiveRoot, routeAbsoluteToTarget, targetSyncSettings } from '../sync/targets.js';
+import {
+  effectiveRoot,
+  routeAbsoluteToTarget,
+  targetSyncSettings,
+  autoReconcileHandles,
+} from '../sync/targets.js';
 import { migrateVaultLayout } from '../sync/migrate.js';
 import { Vault } from '../vault.js';
 import {
@@ -11,6 +16,7 @@ import {
   requireConfig,
   saveState,
   loadState,
+  stateDir,
   QueuedConflict,
 } from '../config.js';
 import { notify } from '../notify.js';
@@ -18,6 +24,7 @@ import { ConflictItem } from '../types.js';
 import { runOnce } from './run.js';
 import { LicenseLimitError, assertCanSync, recordSync } from '../license/gate.js';
 import { revalidateInternal } from './license.js';
+import { acquireSingleInstanceLock, realLockDeps } from '../daemon/single-instance.js';
 
 interface WatchOptions {
   interval: string;
@@ -31,6 +38,15 @@ interface TargetRuntime {
 
 export async function watchCommand(options: WatchOptions): Promise<void> {
   const config = requireConfig(await loadConfig());
+
+  // Single-instance guard: a starting daemon supersedes any stale/orphaned one
+  // so multiple daemons can't pile up (e.g. after a force-quit) and fight over
+  // state.json. Released on clean shutdown.
+  const releaseLock = await acquireSingleInstanceLock(
+    path.join(stateDir(), 'daemon.pid'),
+    realLockDeps(),
+  );
+
   const vault = new Vault(config.vaultPath);
 
   // One-time vault layout migration: pre-v0.6 single-target vaults kept files
@@ -65,9 +81,7 @@ export async function watchCommand(options: WatchOptions): Promise<void> {
   // pushed automatically — not on startup, not on the periodic tick. "Manual
   // only" means the user drives every sync explicitly (menu / dashboard / CLI),
   // so connecting a manual target no longer triggers a surprise pull.
-  const autoHandles = runtimes
-    .filter((r) => r.target.syncMode === 'auto')
-    .map((r) => r.target.handle);
+  const autoHandles = autoReconcileHandles(runtimes.map((r) => r.target));
 
   const reconcile = async (label: string): Promise<void> => {
     // A failed layout migration means files may still sit at their old paths
@@ -220,6 +234,7 @@ export async function watchCommand(options: WatchOptions): Promise<void> {
     if (timer) clearTimeout(timer);
     await flush();
     await Promise.all(watchers.map((w) => w.close()));
+    releaseLock();
     process.exit(0);
   };
   process.on('SIGINT', shutdown);

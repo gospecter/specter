@@ -199,9 +199,10 @@ final class StatusStore: ObservableObject {
 
     var lastSyncRelative: String {
         guard let iso = state.lastSyncAt,
-              let date = ISO8601DateFormatter().date(from: iso) else { return "never" }
+              let date = ISO8601.parse(iso) else { return "never" }
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
+        formatter.locale = Locale(identifier: "en_US")
         return formatter.localizedString(for: date, relativeTo: Date())
     }
 }
@@ -627,12 +628,15 @@ struct SpecterApp: App {
                 }
                 .onReceive(NotificationCenter.default.publisher(for: .specterWebflowOAuth)) { note in
                     // Webflow OAuth completed: pre-fill the connect form with the
-                    // exchanged token and open it so the user picks the site.
+                    // exchanged token and present it as a sheet over the
+                    // dashboard so the user picks the site (no free-floating
+                    // window).
                     guard let token = note.userInfo?["token"] as? String else { return }
                     webflowConnect.loadFromOAuth(token: token)
                     NSApplication.shared.setActivationPolicy(.regular)
                     NSApplication.shared.activate(ignoringOtherApps: true)
-                    openWindow(id: "webflow-connect")
+                    openWindow(id: "dashboard")
+                    dashboard.activeSheet = .webflow
                 }
         }
         .menuBarExtraStyle(.menu)
@@ -680,7 +684,11 @@ struct SpecterApp: App {
         .handlesExternalEvents(matching: ["preview"])
 
         Window("Specter", id: "dashboard") {
-            DashboardView(controller: dashboard, preview: preview, license: license)
+            DashboardView(controller: dashboard, preview: preview, license: license,
+                          ghostConnect: ghostConnect,
+                          wordpressConnect: wordpressConnect,
+                          shopifyConnect: shopifyConnect,
+                          webflowConnect: webflowConnect)
                 .onAppear {
                     // Belt-and-suspenders configure: also wired on the
                     // MenuBarExtra label's .onAppear, but that lifecycle is
@@ -705,123 +713,13 @@ struct SpecterApp: App {
         .commandsRemoved()
         .handlesExternalEvents(matching: ["dashboard"])
 
-        Window("Add WordPress", id: "wordpress-connect") {
-            WordPressConnectView(controller: wordpressConnect) {
-                supervisor.restart()
-                dashboard.reload()
-                store.reload()
-                wordpressConnect.reset()
-                if let window = NSApplication.shared.windows.first(where: { $0.title == "Add WordPress" }) {
-                    window.close()
-                }
-                NSApplication.shared.setActivationPolicy(.accessory)
-            } onCancel: {
-                wordpressConnect.reset()
-                if let window = NSApplication.shared.windows.first(where: { $0.title == "Add WordPress" }) {
-                    window.close()
-                }
-                NSApplication.shared.setActivationPolicy(.accessory)
-            }
-            .onAppear {
-                NSApplication.shared.setActivationPolicy(.regular)
-                NSApplication.shared.activate(ignoringOtherApps: true)
-            }
-            .onDisappear {
-                NSApplication.shared.setActivationPolicy(.accessory)
-            }
-        }
-        .windowResizability(.contentSize)
-        .commandsRemoved()
-        .handlesExternalEvents(matching: ["wordpress-connect"])
-
-        Window("Add Webflow", id: "webflow-connect") {
-            WebflowConnectView(controller: webflowConnect) {
-                supervisor.restart()
-                dashboard.reload()
-                store.reload()
-                webflowConnect.reset()
-                if let window = NSApplication.shared.windows.first(where: { $0.title == "Add Webflow" }) {
-                    window.close()
-                }
-                NSApplication.shared.setActivationPolicy(.accessory)
-            } onCancel: {
-                webflowConnect.reset()
-                if let window = NSApplication.shared.windows.first(where: { $0.title == "Add Webflow" }) {
-                    window.close()
-                }
-                NSApplication.shared.setActivationPolicy(.accessory)
-            }
-            .onAppear {
-                NSApplication.shared.setActivationPolicy(.regular)
-                NSApplication.shared.activate(ignoringOtherApps: true)
-            }
-            .onDisappear {
-                NSApplication.shared.setActivationPolicy(.accessory)
-            }
-        }
-        .windowResizability(.contentSize)
-        .commandsRemoved()
-        .handlesExternalEvents(matching: ["webflow-connect"])
-
-        Window("Add Ghost", id: "ghost-connect") {
-            GhostConnectView(controller: ghostConnect) {
-                supervisor.restart()
-                dashboard.reload()
-                store.reload()
-                ghostConnect.reset()
-                if let window = NSApplication.shared.windows.first(where: { $0.title == "Add Ghost" }) {
-                    window.close()
-                }
-                NSApplication.shared.setActivationPolicy(.accessory)
-            } onCancel: {
-                ghostConnect.reset()
-                if let window = NSApplication.shared.windows.first(where: { $0.title == "Add Ghost" }) {
-                    window.close()
-                }
-                NSApplication.shared.setActivationPolicy(.accessory)
-            }
-            .onAppear {
-                NSApplication.shared.setActivationPolicy(.regular)
-                NSApplication.shared.activate(ignoringOtherApps: true)
-            }
-            .onDisappear {
-                NSApplication.shared.setActivationPolicy(.accessory)
-            }
-        }
-        .windowResizability(.contentSize)
-        .commandsRemoved()
-        .handlesExternalEvents(matching: ["ghost-connect"])
-
-        Window("Edit Shopify", id: "shopify-connect") {
-            ShopifyConnectView(controller: shopifyConnect) {
-                supervisor.restart()
-                dashboard.reload()
-                store.reload()
-                shopifyConnect.reset()
-                if let window = NSApplication.shared.windows.first(where: { $0.title == "Edit Shopify" }) {
-                    window.close()
-                }
-                NSApplication.shared.setActivationPolicy(.accessory)
-            } onCancel: {
-                shopifyConnect.reset()
-                if let window = NSApplication.shared.windows.first(where: { $0.title == "Edit Shopify" }) {
-                    window.close()
-                }
-                NSApplication.shared.setActivationPolicy(.accessory)
-            }
-            .onAppear {
-                NSApplication.shared.setActivationPolicy(.regular)
-                NSApplication.shared.activate(ignoringOtherApps: true)
-            }
-            .onDisappear {
-                NSApplication.shared.setActivationPolicy(.accessory)
-            }
-        }
-        .windowResizability(.contentSize)
-        .commandsRemoved()
-        .handlesExternalEvents(matching: ["shopify-connect"])
-
-        // The standalone Settings window is retired — preferences now live in
-        // the dashboard's Settings pane (DashboardView → SettingsPane).
+        // The standalone connect windows (Ghost / WordPress / Webflow / Shopify)
+        // are retired — add/edit a connection now presents as a sheet anchored
+        // to the dashboard window (DashboardView → `.sheet(item:)`), driven by
+        // `DashboardController.activeSheet`. The Webflow OAuth return path also
+        // routes through that sheet (see the .specterWebflowOAuth handler).
+        //
+        // The standalone Settings window is likewise retired — preferences now
+        // live in the dashboard's Settings pane (DashboardView → SettingsPane).
     }
 }
